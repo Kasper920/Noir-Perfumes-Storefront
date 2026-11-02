@@ -4,13 +4,14 @@ import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import NotFound from '@/pages/not-found';
-import logo from './assets/noir-logo.png';
-import lineup from './assets/noir-signature-scents.png';
+import logo from './assets/noir-logo.webp';
+import lineup from './assets/noir-signature-scents.webp';
 import { getInitialLanguage, getInitialTheme, setPreference } from './i18n/preferences';
 import { messages, productMessages } from './i18n/translations';
 import { Route, Switch, useLocation, Router as WouterRouter } from 'wouter';
-import { ArrowDown, ArrowRight, Check, Clock3, Gift, Heart, Menu, Moon, Search, ShieldCheck, ShoppingBag, Sun, Truck, X, Minus, Plus, Trash2 } from 'lucide-react';
+import { ArrowDown, ArrowRight, Check, Clock3, Gift, Heart, Menu, Moon, Search, ShieldCheck, ShoppingBag, Sun, Truck, X, Minus, Plus, Trash2, Instagram, Facebook, MessageCircle, MapPin, Phone, Mail } from 'lucide-react';
 import { products, formatPrice as formatCurrency } from './data/products';
+import { STORE_CONFIG } from './data/config';
 import { CommerceProvider, useCommerce, type PerfumeSize } from './commerce-context';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
@@ -44,6 +45,7 @@ function Home() {
   const [favoritesOpen, setFavoritesOpen] = useState(false);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [orderComplete, setOrderComplete] = useState(false);
+  const [contactSent, setContactSent] = useState(false);
   const [badgePulse, setBadgePulse] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [showSkeleton, setShowSkeleton] = useState(true);
@@ -88,9 +90,31 @@ function Home() {
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
-    if (menuOpen) document.body.style.overflow = 'hidden';
+    if (!menuOpen) return;
+    document.body.style.overflow = 'hidden';
+    const previousFocus = document.activeElement as HTMLElement | null;
+    const drawer = document.querySelector<HTMLElement>('.mobile-drawer');
+    const focusable = () => Array.from(drawer?.querySelectorAll<HTMLElement>('a[href], button:not([disabled])') ?? []);
+    const frame = requestAnimationFrame(() => focusable()[0]?.focus());
+    const trapFocus = (event: KeyboardEvent) => {
+      if (event.key !== 'Tab') return;
+      const controls = focusable();
+      const first = controls[0];
+      const last = controls.at(-1);
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last?.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first?.focus();
+      }
+    };
+    document.addEventListener('keydown', trapFocus);
     return () => {
+      cancelAnimationFrame(frame);
+      document.removeEventListener('keydown', trapFocus);
       document.body.style.overflow = previousOverflow;
+      previousFocus?.focus();
     };
   }, [menuOpen]);
 
@@ -127,6 +151,20 @@ function Home() {
   useEffect(() => {
     const timer = window.setTimeout(() => setShowSkeleton(false), 520);
     return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    const targets = document.querySelectorAll<HTMLElement>('.scroll-reveal');
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('is-visible');
+          observer.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.08, rootMargin: '0px 0px 40px 0px' });
+    targets.forEach((target) => observer.observe(target));
+    return () => observer.disconnect();
   }, []);
 
   const visibleProducts = useMemo(() => {
@@ -204,6 +242,12 @@ function Home() {
     setOrderComplete(true);
     toast({ title: copy.orderConfirmed, description: copy.orderSuccess });
   };
+  const submitContact = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!event.currentTarget.reportValidity()) return;
+    event.currentTarget.reset();
+    setContactSent(true);
+  };
 
   const preferenceControls = (
     <div className="preference-controls">
@@ -265,7 +309,7 @@ function Home() {
 
       <main>
         <section id="home" className="hero" aria-label={copy.hero.aria}>
-          <img className="hero-image" src={lineup} alt="" aria-hidden="true" />
+          <div className="hero-image" style={{ backgroundImage: `url("${lineup}")` }} aria-hidden="true" />
           <div className="hero-shade" />
           <div className="gold-halo" />
           <div className="particle-field" aria-hidden="true">
@@ -292,7 +336,7 @@ function Home() {
             <span className="hero-index">{formatNumber(1).padStart(2, '0')} <i /> {formatNumber(6).padStart(2, '0')}</span>
           </div>
         </section>
-        <section id="products" className="products-section section-shell">
+        <section id="products" className="products-section section-shell scroll-reveal">
           <div className="section-heading">
             <div>
               <p className="section-kicker">{copy.products.kicker}</p>
@@ -336,7 +380,7 @@ function Home() {
           </div>
           {!showSkeleton && visibleProducts.length === 0 && <p className="empty-products">{copy.products.none}</p>}
         </section>
-        <section id="collections" className="collections-section section-shell">
+        <section id="collections" className="collections-section section-shell scroll-reveal">
           <div className="section-heading collection-heading">
             <div><p className="section-kicker">{copy.collections.kicker}</p><h2>{rtl ? copy.collections.title : <>{copy.collections.title}<br /><em>{copy.collections.accent}</em></>}</h2></div>
             <p className="section-intro">{copy.collections.intro}</p>
@@ -351,23 +395,62 @@ function Home() {
             </button>)}
           </div>
         </section>
-        <section className="promise-strip" aria-label={copy.promises.aria}>
+        <section className="promise-strip scroll-reveal" aria-label={copy.promises.aria}>
           {[Clock3, ShieldCheck, Truck, Gift].map((Icon, index) => <div className="promise-item" key={index}><Icon size={21} strokeWidth={1.25} /><div><h3>{copy.promises.items[index].title}</h3><p>{copy.promises.items[index].copy}</p></div></div>)}
         </section>
-        <section id="about" className="about-section section-shell">
+        <section id="about" className="about-section section-shell scroll-reveal">
           <p className="section-kicker">{copy.about.kicker}</p>
           <h2>{rtl ? <>{copy.about.title}<br /><em>{copy.about.accent}</em></> : <>{copy.about.title}<br /><em>{copy.about.accent}</em></>}</h2>
           <p className="about-copy">{copy.about.copy}</p>
           <span className="about-mark">N / 01</span>
         </section>
       </main>
-      <footer id="contact" className="site-footer section-shell">
-        <a href="#home" className="footer-brand">NOIR <span>PERFUMES</span></a>
-        <p>{copy.footer.line}</p>
-        <span>© {new Intl.NumberFormat(rtl ? 'ar-KW' : 'en-KW').format(new Date().getFullYear())} NOIR. {copy.footer.rights}</span>
+      <footer id="contact" className="site-footer section-shell scroll-reveal">
+        <div className="footer-main">
+          <div className="footer-brand-column">
+            <a href="#home" className="footer-brand" aria-label={copy.nav.logo}><img src={logo} alt="NOIR PERFUMES" width="150" height="100" loading="lazy" /></a>
+            <p className="footer-slogan">{copy.footer.line}</p>
+            <p>{copy.footer.description}</p>
+            <div className="footer-socials" aria-label={copy.footer.social}>
+              <a href={STORE_CONFIG.instagramUrl} target="_blank" rel="noreferrer" aria-label={`${copy.footer.instagram} @${STORE_CONFIG.instagramHandle}`}><Instagram size={18} /></a>
+              <a href={`https://wa.me/${STORE_CONFIG.whatsappNumber}`} target="_blank" rel="noreferrer" aria-label={copy.footer.whatsapp}><MessageCircle size={18} /></a>
+              <a href="https://facebook.com/noirperfumes" target="_blank" rel="noreferrer" aria-label="Facebook"><Facebook size={18} /></a>
+            </div>
+          </div>
+          <nav className="footer-links" aria-label={copy.footer.quickLinks}>
+            <h2>{copy.footer.quickLinks}</h2>
+            {navigation.map(({ id, key }) => <a href={`#${id}`} key={id}>{copy.nav[key]}</a>)}
+          </nav>
+          <div className="footer-contact">
+            <h2>{copy.footer.location}</h2>
+            <p><MapPin size={16} />{STORE_CONFIG.address[language]}</p>
+            <a className="footer-action" href={STORE_CONFIG.mapsUrl} target="_blank" rel="noreferrer">{copy.footer.openMaps}<ArrowRight size={14} /></a>
+            <p><Phone size={16} /><a href={`tel:${STORE_CONFIG.phoneDisplay.replaceAll(' ', '')}`}>{STORE_CONFIG.phoneDisplay}</a></p>
+            <a className="footer-action" href={`https://wa.me/${STORE_CONFIG.whatsappNumber}`} target="_blank" rel="noreferrer">{copy.footer.whatsapp}<MessageCircle size={14} /></a>
+            <h3>{copy.footer.hours}</h3><p>{STORE_CONFIG.workingHours[language]}</p>
+            <h3>{copy.footer.payments}</h3>
+            <div className="payment-methods" aria-label={copy.footer.payments}>
+              {['VISA', 'Mastercard', 'Apple Pay', 'KNET', copy.paymentOptions.cash].map((method) => <span key={method}>{method}</span>)}
+            </div>
+          </div>
+          <div className="footer-form-column">
+            <h2>{copy.footer.contact}</h2><p>{copy.footer.contactDescription}</p>
+            <form className="contact-form" onSubmit={submitContact}>
+              <label>{copy.footer.name}<input name="name" autoComplete="name" required minLength={2} /></label>
+              <label>{copy.footer.email}<input name="email" type="email" autoComplete="email" required /></label>
+              <label>{copy.footer.message}<textarea name="message" required minLength={10} rows={3} /></label>
+              <button className="footer-submit" type="submit">{copy.footer.send}<Mail size={15} /></button>
+              {contactSent && <p className="contact-success" role="status">{copy.footer.success}</p>}
+            </form>
+          </div>
+        </div>
+        <div className="footer-bottom">
+          <span>© {formatNumber(new Date().getFullYear())} NOIR. {copy.footer.rights}</span>
+          <span>{copy.footer.social}: <a href={STORE_CONFIG.instagramUrl} target="_blank" rel="noreferrer">@{STORE_CONFIG.instagramHandle}</a></span>
+        </div>
       </footer>
 
-      <div className={`mobile-drawer${menuOpen ? ' is-open' : ''}`} aria-hidden={!menuOpen} inert={!menuOpen}>
+      <div className={`mobile-drawer${menuOpen ? ' is-open' : ''}`} role="dialog" aria-modal={menuOpen} aria-label={copy.nav.main} aria-hidden={!menuOpen} inert={!menuOpen}>
         <div className="drawer-top">
           <span className="drawer-eyebrow">NOIR — MENU</span>
           <button className="icon-button drawer-close" type="button" aria-label={copy.mobile.close} onClick={() => setMenuOpen(false)}><X size={23} strokeWidth={1.4} /></button>

@@ -1,4 +1,4 @@
-import productGrid from '../assets/noir-product-grid.png';
+import productGrid from '../assets/noir-product-grid.webp';
 import { STORE_CONFIG } from './config';
 
 export const products = [
