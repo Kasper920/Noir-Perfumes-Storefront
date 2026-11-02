@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
@@ -8,7 +8,8 @@ import logo from './assets/noir-logo.png';
 import lineup from './assets/noir-signature-scents.png';
 import { getCart, getFavorites, getPreference, setPreference } from './i18n/preferences';
 import { Route, Switch, useLocation, Router as WouterRouter } from 'wouter';
-import { ArrowDown, ArrowRight, Heart, Menu, Moon, Search, ShoppingBag, Sun, X } from 'lucide-react';
+import { ArrowDown, ArrowRight, Check, Clock3, Gift, Heart, Menu, Moon, Search, ShieldCheck, ShoppingBag, Sun, Truck, X } from 'lucide-react';
+import { products, formatPrice } from './data/products';
 
 const queryClient = new QueryClient();
 const navigation = [
@@ -18,6 +19,14 @@ const navigation = [
   { id: 'about', en: 'About', ar: 'عنّا' },
   { id: 'contact', en: 'Contact', ar: 'تواصل' },
 ];
+const filters = [
+  { id: 'all', en: 'All', ar: 'الكل' },
+  { id: 'For Him', en: 'For Him', ar: 'للرجال' },
+  { id: 'For Her', en: 'For Her', ar: 'للنساء' },
+  { id: 'Unisex', en: 'Unisex', ar: 'للجنسين' },
+  { id: 'Oud', en: 'Oud', ar: 'عود' },
+  { id: 'Fresh', en: 'Fresh', ar: 'منعش' },
+];
 
 function Home() {
   const [theme, setTheme] = useState<'dark' | 'light'>(() => getPreference('theme', 'dark'));
@@ -25,6 +34,13 @@ function Home() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const [active, setActive] = useState('home');
+  const [filter, setFilter] = useState('all');
+  const [sort, setSort] = useState('featured');
+  const [favorites, setFavorites] = useState<string[]>([]);
+  const [quickView, setQuickView] = useState<(typeof products)[number] | null>(null);
+  const [showSkeleton, setShowSkeleton] = useState(true);
+  const [revealed, setRevealed] = useState<string[]>([]);
+  const productGridRef = useRef<HTMLDivElement>(null);
   const [favoriteCount] = useState(() => getFavorites().length);
   const [cartCount] = useState(() => getCart().length);
   const rtl = language === 'ar';
@@ -70,18 +86,80 @@ function Home() {
   }, []);
 
   useEffect(() => {
-    const hero = document.getElementById('home');
-    if (!hero) return;
-    const observer = new IntersectionObserver(([entry]) => {
-      if (entry.isIntersecting) setActive('home');
-    }, { threshold: 0.45 });
-    observer.observe(hero);
+    const initialTarget = window.location.hash.slice(1);
+    if (!initialTarget) return;
+    window.requestAnimationFrame(() => {
+      document.getElementById(initialTarget)?.scrollIntoView({ behavior: 'smooth' });
+    });
+  }, []);
+
+  useEffect(() => {
+    const sections = ['home', 'products', 'collections', 'about']
+      .map((id) => document.getElementById(id))
+      .filter((section): section is HTMLElement => Boolean(section));
+    const observer = new IntersectionObserver((entries) => {
+      const visible = entries.filter((entry) => entry.isIntersecting)
+        .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+      if (visible) setActive(visible.target.id);
+    }, { threshold: [0.18, 0.38, 0.62], rootMargin: '-18% 0px -42% 0px' });
+    sections.forEach((section) => observer.observe(section));
     return () => observer.disconnect();
   }, []);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setShowSkeleton(false), 520);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  const visibleProducts = useMemo(() => {
+    const filtered = products.filter((product) => {
+      if (filter === 'all') return true;
+      if (['For Him', 'For Her', 'Unisex'].includes(filter)) return product.audience.en.includes(filter);
+      if (filter === 'Oud') return product.collections.en.some((item) => item.includes('Oud'));
+      if (filter === 'Fresh') return product.collections.en.some((item) => item === 'Fresh' || item === 'Fresh & Night');
+      return product.collections.en.includes(filter);
+    });
+    if (sort === 'low') return [...filtered].sort((a, b) => a.prices['100ml'] - b.prices['100ml']);
+    if (sort === 'high') return [...filtered].sort((a, b) => b.prices['100ml'] - a.prices['100ml']);
+    return filtered;
+  }, [filter, sort]);
+
+  useEffect(() => {
+    if (showSkeleton) return;
+    const nodes = productGridRef.current?.querySelectorAll<HTMLElement>('.product-card:not(.is-revealed)');
+    if (!nodes?.length) return;
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (!entry.isIntersecting) return;
+        const id = (entry.target as HTMLElement).dataset.productId;
+        if (id) setRevealed((current) => current.includes(id) ? current : [...current, id]);
+        observer.unobserve(entry.target);
+      });
+    }, { threshold: 0.08, rootMargin: '0px 0px 60px 0px' });
+    nodes.forEach((node) => observer.observe(node));
+    return () => observer.disconnect();
+  }, [showSkeleton, visibleProducts]);
+
+  useEffect(() => {
+    if (!quickView) return;
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') setQuickView(null); };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [quickView]);
 
   const chooseSection = (id: string) => {
     setActive(id);
     setMenuOpen(false);
+  };
+
+  const selectCollection = (collection: string) => {
+    setFilter(collection);
+    setActive('products');
+    window.setTimeout(() => document.getElementById('products')?.scrollIntoView({ behavior: 'smooth' }), 30);
+  };
+
+  const toggleFavorite = (id: string) => {
+    setFavorites((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
   };
 
   const preferenceControls = (
@@ -171,6 +249,79 @@ function Home() {
             <span className="hero-index">01 <i /> 06</span>
           </div>
         </section>
+        <section id="products" className="products-section section-shell">
+          <div className="section-heading">
+            <div>
+              <p className="section-kicker">{rtl ? 'اكتشف توقيعك' : 'Find your signature'}</p>
+              <h2>{rtl ? 'عطور تُروى كحكاية.' : <>Scents with<br /><em>a story.</em></>}</h2>
+            </div>
+            <p className="section-intro">{rtl ? 'تركيبات استثنائية، صُممت لتبقى في الذاكرة.' : 'Distinctive compositions, made to linger long after the moment.'}</p>
+          </div>
+          <div className="product-controls">
+            <div className="filter-list" role="group" aria-label={rtl ? 'تصفية العطور' : 'Filter fragrances'}>
+              {filters.map((item) => {
+                const selected = filter === item.id || (filter === 'Oud & Amber' && item.id === 'Oud') || (filter === 'Floral' && item.id === 'For Her') || (filter === 'Fresh & Night' && item.id === 'Fresh');
+                return <button key={item.id} type="button" className={`filter-pill${selected ? ' selected' : ''}`} onClick={() => setFilter(item.id)} data-testid={`filter-${item.id.toLowerCase().replaceAll(' ', '-')}`}>{rtl ? item.ar : item.en}</button>;
+              })}
+            </div>
+            <label className="sort-control"><span>{rtl ? 'ترتيب حسب' : 'Sort by'}</span>
+              <select value={sort} onChange={(event) => setSort(event.target.value)} aria-label={rtl ? 'ترتيب المنتجات' : 'Sort products'} data-testid="select-product-sort">
+                <option value="featured">{rtl ? 'مميزة' : 'Featured'}</option>
+                <option value="low">{rtl ? 'السعر: الأقل أولاً' : 'Price: low to high'}</option>
+                <option value="high">{rtl ? 'السعر: الأعلى أولاً' : 'Price: high to low'}</option>
+              </select>
+            </label>
+          </div>
+          <div className="product-grid" ref={productGridRef} aria-live="polite">
+            {showSkeleton ? Array.from({ length: 6 }, (_, index) => <div className="product-skeleton" key={index}><div /><span /><i /></div>) : visibleProducts.map((product) => (
+              <article className={`product-card${revealed.includes(product.id) ? ' is-revealed' : ''}`} key={product.id} data-product-id={product.id} data-testid={`card-product-${product.id}`}>
+                <div className="product-image-wrap">
+                  <div className="product-image-crop" style={{ '--crop-left': `${product.crop.column * -100}%`, '--crop-top': `${product.crop.row * -100}%`, '--crop-position': product.crop.objectPosition } as CSSProperties}>
+                    <img src={product.image} alt={`${product.name[rtl ? 'ar' : 'en']} perfume bottle`} loading="lazy" />
+                  </div>
+                  {product.badge && <span className="product-badge">{product.badge[rtl ? 'ar' : 'en']}</span>}
+                  <button className={`favorite-toggle${favorites.includes(product.id) ? ' is-favorite' : ''}`} type="button" aria-label={favorites.includes(product.id) ? (rtl ? 'إزالة من المفضلة' : 'Remove from favorites') : (rtl ? 'أضف إلى المفضلة' : 'Add to favorites')} aria-pressed={favorites.includes(product.id)} onClick={() => toggleFavorite(product.id)} data-testid={`button-favorite-${product.id}`}><Heart size={18} strokeWidth={1.4} fill={favorites.includes(product.id) ? 'currentColor' : 'none'} /></button>
+                  <button className="quick-view" type="button" onClick={() => setQuickView(product)} data-testid={`button-quick-view-${product.id}`}>{rtl ? 'نظرة سريعة' : 'Quick view'} <ArrowRight size={14} /></button>
+                </div>
+                <div className="product-info">
+                  <div className="product-title-row"><div><h3>{product.name[rtl ? 'ar' : 'en']}</h3><p>{product.concentration[rtl ? 'ar' : 'en']}</p></div><span className="product-price">{formatPrice(product.prices['100ml'])}</span></div>
+                  <p className="note-highlights">{product.noteHighlights[rtl ? 'ar' : 'en'].join(' · ')}</p>
+                  <div className="product-buy-row"><span className="size-label">100ml</span><button type="button" className="add-button" data-testid={`button-add-${product.id}`}>{rtl ? 'أضف إلى السلة' : 'Add to Cart'} <span>＋</span></button></div>
+                </div>
+              </article>
+            ))}
+          </div>
+          {!showSkeleton && visibleProducts.length === 0 && <p className="empty-products">{rtl ? 'لا توجد عطور ضمن هذا الاختيار.' : 'No fragrances in this selection.'}</p>}
+        </section>
+        <section id="collections" className="collections-section section-shell">
+          <div className="section-heading collection-heading">
+            <div><p className="section-kicker">{rtl ? 'عائلات عطرية' : 'Explore by mood'}</p><h2>{rtl ? 'اختَر الأثر.' : <>The art of<br /><em>the accord.</em></>}</h2></div>
+            <p className="section-intro">{rtl ? 'ثلاثة عوالم، لكل منها حكاية مختلفة.' : 'Three olfactive worlds. Each with its own point of view.'}</p>
+          </div>
+          <div className="collection-grid">
+            {[
+              { title: 'Oud & Amber', ar: 'عود وعنبر', caption: { en: 'Warmth, made unforgettable.', ar: 'دفء لا يُنسى.' }, symbol: '01', filter: 'Oud' },
+              { title: 'Floral', ar: 'زهري', caption: { en: 'A softer kind of presence.', ar: 'حضور أكثر رقة.' }, symbol: '02', filter: 'For Her' },
+              { title: 'Fresh & Night', ar: 'منعش وليلي', caption: { en: 'Light that lingers into dusk.', ar: 'انتعاش يمتد حتى المساء.' }, symbol: '03', filter: 'Fresh' },
+            ].map((collection, index) => <button type="button" className={`collection-card collection-card-${index + 1}`} key={collection.title} onClick={() => selectCollection(collection.title)} data-testid={`collection-${index + 1}`}>
+              <span className="collection-number">{collection.symbol} / 03</span><span className="collection-card-name">{rtl ? collection.ar : collection.title}</span><span className="collection-card-caption">{collection.caption[rtl ? 'ar' : 'en']}</span><span className="collection-arrow"><ArrowRight size={17} /></span>
+            </button>)}
+          </div>
+        </section>
+        <section className="promise-strip" aria-label={rtl ? 'مزايا نوار' : 'The Noir promise'}>
+          {[
+            { icon: Clock3, title: { en: 'Long-lasting', ar: 'ثبات يدوم' }, copy: { en: 'A signature that stays.', ar: 'أثر يبقى معك.' } },
+            { icon: ShieldCheck, title: { en: 'Authentic', ar: 'أصلي' }, copy: { en: 'Always the real thing.', ar: 'أصالة في كل تفصيل.' } },
+            { icon: Truck, title: { en: 'Fast delivery', ar: 'توصيل سريع' }, copy: { en: 'At your door, promptly.', ar: 'حتى بابك بكل سرعة.' } },
+            { icon: Gift, title: { en: 'Gift packaging', ar: 'تغليف الهدايا' }, copy: { en: 'Ready for their moment.', ar: 'جاهز ليُهدى.' } },
+          ].map(({ icon: Icon, title, copy }) => <div className="promise-item" key={title.en}><Icon size={21} strokeWidth={1.25} /><div><h3>{title[rtl ? 'ar' : 'en']}</h3><p>{copy[rtl ? 'ar' : 'en']}</p></div></div>)}
+        </section>
+        <section id="about" className="about-section section-shell">
+          <p className="section-kicker">{rtl ? 'عن نوار' : 'The Noir point of view'}</p>
+          <h2>{rtl ? <>نؤمن أن العطر<br /><em>هو ذاكرة تُرتدى.</em></> : <>Fragrance is a memory<br /><em>you choose to wear.</em></>}</h2>
+          <p className="about-copy">{rtl ? 'في نوار، نصنع عطوراً توازن بين الحرفية الرفيعة والروح المعاصرة. كل تركيبة توقيع شخصي، وكل أثر حكاية تستحق أن تُروى.' : 'At NOIR, we bring considered craft into the everyday. Each composition is a personal signature; each lingering trace, a story worth telling.'}</p>
+          <span className="about-mark">N / 01</span>
+        </section>
       </main>
 
       <div className={`mobile-drawer${menuOpen ? ' is-open' : ''}`} aria-hidden={!menuOpen} inert={!menuOpen}>
@@ -192,6 +343,13 @@ function Home() {
         <p className="drawer-signoff">A trace that stays.</p>
       </div>
       {menuOpen && <button className="drawer-scrim" aria-label={rtl ? 'إغلاق القائمة' : 'Close menu'} onClick={() => setMenuOpen(false)} />}
+      {quickView && <div className="quick-view-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setQuickView(null); }}>
+        <section className="quick-view-dialog" role="dialog" aria-modal="true" aria-label={quickView.name[rtl ? 'ar' : 'en']}>
+          <button className="quick-close" type="button" aria-label={rtl ? 'إغلاق' : 'Close'} onClick={() => setQuickView(null)}><X size={20} /></button>
+          <div className="quick-view-art"><div className="product-image-crop" style={{ '--crop-left': `${quickView.crop.column * -100}%`, '--crop-top': `${quickView.crop.row * -100}%`, '--crop-position': quickView.crop.objectPosition } as CSSProperties}><img src={quickView.image} alt="" /></div></div>
+          <div className="quick-view-copy"><p className="section-kicker">{quickView.concentration[rtl ? 'ar' : 'en']}</p><h2>{quickView.name[rtl ? 'ar' : 'en']}</h2><p className="quick-notes">{quickView.noteHighlights[rtl ? 'ar' : 'en'].join(' · ')}</p><p>{quickView.description[rtl ? 'ar' : 'en']}</p><strong>{formatPrice(quickView.prices['100ml'])} <small> / 100ml</small></strong><button type="button" className="cta-primary" onClick={() => setQuickView(null)}>{rtl ? 'متابعة الاكتشاف' : 'Continue exploring'} <Check size={15} /></button></div>
+        </section>
+      </div>}
     </div>
   );
 }
