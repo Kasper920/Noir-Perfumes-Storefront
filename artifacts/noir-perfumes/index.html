@@ -3,6 +3,23 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
+    <script>
+      (() => {
+        let theme = 'dark';
+        let language = 'en';
+        try {
+          const savedTheme = JSON.parse(localStorage.getItem('noir:theme') || 'null');
+          const savedLanguage = JSON.parse(localStorage.getItem('noir:language') || 'null');
+          theme = savedTheme === 'light' || savedTheme === 'dark'
+            ? savedTheme
+            : (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+          language = savedLanguage === 'ar' ? 'ar' : 'en';
+        } catch {}
+        document.documentElement.dataset.theme = theme;
+        document.documentElement.lang = language;
+        document.documentElement.dir = language === 'ar' ? 'rtl' : 'ltr';
+      })();
+    </script>
     <title>NOIR PERFUMES</title>
     <meta name="description" content="NOIR PERFUMES — Wear the Mystery. A new house of fragrance." />
     <meta name="robots" content="index, follow" />

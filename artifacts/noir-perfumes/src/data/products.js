@@ -172,8 +172,8 @@ export const products = [
   },
 ];
 
-export const formatPrice = (amount) =>
-  new Intl.NumberFormat(STORE_CONFIG.locale, {
+export const formatPrice = (amount, language = 'en') =>
+  new Intl.NumberFormat(language === 'ar' ? 'ar-KW' : STORE_CONFIG.locale, {
     style: 'currency',
     currency: STORE_CONFIG.currency,
     maximumFractionDigits: 0,

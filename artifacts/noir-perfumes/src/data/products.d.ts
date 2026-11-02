@@ -21,4 +21,4 @@ export type LocalProduct = {
 };
 
 export const products: LocalProduct[];
-export function formatPrice(amount: number): string;
+export function formatPrice(amount: number, language?: 'en' | 'ar'): string;

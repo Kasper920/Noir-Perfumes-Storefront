@@ -26,6 +26,15 @@ export const getPreference = <T,>(name: 'theme' | 'language', fallback: T): T =>
   read(STORAGE_KEYS[name], fallback);
 export const setPreference = (name: 'theme' | 'language', value: string) =>
   write(STORAGE_KEYS[name], value);
+export const getInitialTheme = (): 'dark' | 'light' => {
+  const saved = getPreference<unknown>('theme', null);
+  if (saved === 'dark' || saved === 'light') return saved;
+  return typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+};
+export const getInitialLanguage = (): 'en' | 'ar' => {
+  const saved = getPreference<unknown>('language', null);
+  return saved === 'ar' ? 'ar' : 'en';
+};
 export const getCart = (): unknown[] => read(STORAGE_KEYS.cart, []);
 export const setCart = (items: unknown[]) => write(STORAGE_KEYS.cart, items);
 export const getFavorites = (): string[] => read(STORAGE_KEYS.favorites, []);
