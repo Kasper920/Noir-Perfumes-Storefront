@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type FormEvent } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
@@ -6,10 +6,13 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import NotFound from '@/pages/not-found';
 import logo from './assets/noir-logo.png';
 import lineup from './assets/noir-signature-scents.png';
-import { getCart, getFavorites, getPreference, setPreference } from './i18n/preferences';
+import { getPreference, setPreference } from './i18n/preferences';
 import { Route, Switch, useLocation, Router as WouterRouter } from 'wouter';
-import { ArrowDown, ArrowRight, Check, Clock3, Gift, Heart, Menu, Moon, Search, ShieldCheck, ShoppingBag, Sun, Truck, X } from 'lucide-react';
+import { ArrowDown, ArrowRight, Check, Clock3, Gift, Heart, Menu, Moon, Search, ShieldCheck, ShoppingBag, Sun, Truck, X, Minus, Plus, Trash2 } from 'lucide-react';
 import { products, formatPrice } from './data/products';
+import { CommerceProvider, useCommerce, type PerfumeSize } from './commerce-context';
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
+import { useToast } from '@/hooks/use-toast';
 
 const queryClient = new QueryClient();
 const navigation = [
@@ -36,14 +39,46 @@ function Home() {
   const [active, setActive] = useState('home');
   const [filter, setFilter] = useState('all');
   const [sort, setSort] = useState('featured');
-  const [favorites, setFavorites] = useState<string[]>([]);
   const [quickView, setQuickView] = useState<(typeof products)[number] | null>(null);
+  const [quickSize, setQuickSize] = useState<PerfumeSize>('100ml');
+  const [quickQuantity, setQuickQuantity] = useState(1);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [cartOpen, setCartOpen] = useState(false);
+  const [favoritesOpen, setFavoritesOpen] = useState(false);
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
+  const [orderComplete, setOrderComplete] = useState(false);
+  const [badgePulse, setBadgePulse] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [showSkeleton, setShowSkeleton] = useState(true);
   const [revealed, setRevealed] = useState<string[]>([]);
   const productGridRef = useRef<HTMLDivElement>(null);
-  const [favoriteCount] = useState(() => getFavorites().length);
-  const [cartCount] = useState(() => getCart().length);
+  const { cart, favorites, addToCart, changeQuantity, removeFromCart, toggleFavorite, removeFavorite, clearCart } = useCommerce();
+  const { toast } = useToast();
+  const cartCount = cart.reduce((sum, line) => sum + line.quantity, 0);
+  const favoriteCount = favorites.length;
   const rtl = language === 'ar';
+  const copy = {
+    search: rtl ? 'بحث' : 'Search',
+    favorites: rtl ? 'المفضلة' : 'Favorites',
+    cart: rtl ? 'السلة' : 'Cart',
+    close: rtl ? 'إغلاق' : 'Close',
+    add: rtl ? 'أضف إلى السلة' : 'Add to Cart',
+    added: rtl ? 'أضيف إلى السلة' : 'Added to cart',
+    remove: rtl ? 'إزالة' : 'Remove',
+    emptyCart: rtl ? 'سلتك بانتظار عطرك المفضل.' : 'Your bag is waiting for a signature scent.',
+    emptyFavorites: rtl ? 'لم تحفظ أي عطر بعد.' : 'No saved fragrances yet.',
+    startShopping: rtl ? 'ابدأ التسوق' : 'Start shopping',
+    subtotal: rtl ? 'المجموع' : 'Subtotal',
+    checkout: rtl ? 'إتمام الطلب' : 'Checkout',
+    name: rtl ? 'الاسم الكامل' : 'Full name',
+    phone: rtl ? 'رقم الهاتف' : 'Phone number',
+    address: rtl ? 'العنوان' : 'Address',
+    payment: rtl ? 'طريقة الدفع' : 'Payment method',
+    submitOrder: rtl ? 'تأكيد الطلب' : 'Place order',
+    orderSuccess: rtl ? 'تم تأكيد طلبك. شكراً لاختيارك نوار.' : 'Your order is confirmed. Thank you for choosing NOIR.',
+    noResults: rtl ? 'لم نعثر على عطر بهذه الكلمات. جرّب اسماً أو نوتة أخرى.' : 'No fragrance found. Try another name or note.',
+  };
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -141,11 +176,8 @@ function Home() {
   }, [showSkeleton, visibleProducts]);
 
   useEffect(() => {
-    if (!quickView) return;
-    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') setQuickView(null); };
-    window.addEventListener('keydown', closeOnEscape);
-    return () => window.removeEventListener('keydown', closeOnEscape);
-  }, [quickView]);
+    if (searchOpen) window.setTimeout(() => searchInputRef.current?.focus(), 40);
+  }, [searchOpen]);
 
   const chooseSection = (id: string) => {
     setActive(id);
@@ -158,8 +190,36 @@ function Home() {
     window.setTimeout(() => document.getElementById('products')?.scrollIntoView({ behavior: 'smooth' }), 30);
   };
 
-  const toggleFavorite = (id: string) => {
-    setFavorites((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
+  const openQuickView = (product: (typeof products)[number]) => {
+    setQuickView(product);
+    setQuickSize('100ml');
+    setQuickQuantity(1);
+  };
+  const addProduct = (id: string, size: PerfumeSize, quantity = 1) => {
+    addToCart(id, size, quantity);
+    setFavoritesOpen(false);
+    setBadgePulse(true);
+    window.setTimeout(() => setBadgePulse(false), 420);
+    toast({ title: copy.added, description: rtl ? 'تمت إضافة العطر إلى حقيبتك.' : 'The fragrance is in your bag.' });
+    setCartOpen(true);
+  };
+  const matchingProducts = products.filter((product) => {
+    const query = searchQuery.trim().toLocaleLowerCase();
+    return query && [product.name.en, product.name.ar, ...product.noteHighlights.en, ...product.noteHighlights.ar,
+      ...product.notes.top.en, ...product.notes.top.ar, ...product.notes.heart.en, ...product.notes.heart.ar,
+      ...product.notes.base.en, ...product.notes.base.ar].some((value) => value.toLocaleLowerCase().includes(query));
+  });
+  const subtotal = cart.reduce((sum, line) => {
+    const product = products.find((item) => item.id === line.productId);
+    return sum + (product?.prices[line.size] ?? 0) * line.quantity;
+  }, 0);
+  const submitCheckout = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!event.currentTarget.reportValidity()) return;
+    clearCart();
+    setCheckoutOpen(false);
+    setOrderComplete(true);
+    toast({ title: rtl ? 'تم تأكيد الطلب' : 'Order confirmed', description: copy.orderSuccess });
   };
 
   const preferenceControls = (
@@ -202,11 +262,11 @@ function Home() {
           ))}
         </nav>
         <div className="header-actions">
-          <button className="icon-button action-button" type="button" aria-label={rtl ? 'بحث' : 'Search'} data-testid="button-search"><Search size={18} strokeWidth={1.5} /></button>
-          <button className="icon-button action-button count-action" type="button" aria-label={`${rtl ? 'المفضلة' : 'Favorites'}: ${favoriteCount}`} data-testid="button-favorites">
+          <button className="icon-button action-button" type="button" aria-label={copy.search} onClick={() => { setSearchQuery(''); setSearchOpen(true); }} data-testid="button-search"><Search size={18} strokeWidth={1.5} /></button>
+          <button className="icon-button action-button count-action" type="button" aria-label={`${copy.favorites}: ${favoriteCount}`} onClick={() => setFavoritesOpen(true)} data-testid="button-favorites">
             <Heart size={18} strokeWidth={1.5} /><span className="count-badge">{favoriteCount}</span>
           </button>
-          <button className="icon-button action-button count-action" type="button" aria-label={`${rtl ? 'السلة' : 'Cart'}: ${cartCount}`} data-testid="button-cart">
+          <button className={`icon-button action-button count-action${badgePulse ? ' badge-pulse' : ''}`} type="button" aria-label={`${copy.cart}: ${cartCount}`} onClick={() => setCartOpen(true)} data-testid="button-cart">
             <ShoppingBag size={18} strokeWidth={1.5} /><span className="count-badge">{cartCount}</span>
           </button>
           <div className="desktop-preferences">{preferenceControls}</div>
@@ -274,19 +334,19 @@ function Home() {
           </div>
           <div className="product-grid" ref={productGridRef} aria-live="polite">
             {showSkeleton ? Array.from({ length: 6 }, (_, index) => <div className="product-skeleton" key={index}><div /><span /><i /></div>) : visibleProducts.map((product) => (
-              <article className={`product-card${revealed.includes(product.id) ? ' is-revealed' : ''}`} key={product.id} data-product-id={product.id} data-testid={`card-product-${product.id}`}>
+              <article className={`product-card${revealed.includes(product.id) ? ' is-revealed' : ''}`} key={product.id} data-product-id={product.id} data-testid={`card-product-${product.id}`} role="group" tabIndex={0} aria-label={`${rtl ? 'عرض' : 'View'} ${product.name[rtl ? 'ar' : 'en']}`} onClick={() => openQuickView(product)} onKeyDown={(event) => { if (event.target !== event.currentTarget) return; if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openQuickView(product); } }}>
                 <div className="product-image-wrap">
                   <div className="product-image-crop" style={{ '--crop-left': `${product.crop.column * -100}%`, '--crop-top': `${product.crop.row * -100}%`, '--crop-position': product.crop.objectPosition } as CSSProperties}>
                     <img src={product.image} alt={`${product.name[rtl ? 'ar' : 'en']} perfume bottle`} loading="lazy" />
                   </div>
                   {product.badge && <span className="product-badge">{product.badge[rtl ? 'ar' : 'en']}</span>}
-                  <button className={`favorite-toggle${favorites.includes(product.id) ? ' is-favorite' : ''}`} type="button" aria-label={favorites.includes(product.id) ? (rtl ? 'إزالة من المفضلة' : 'Remove from favorites') : (rtl ? 'أضف إلى المفضلة' : 'Add to favorites')} aria-pressed={favorites.includes(product.id)} onClick={() => toggleFavorite(product.id)} data-testid={`button-favorite-${product.id}`}><Heart size={18} strokeWidth={1.4} fill={favorites.includes(product.id) ? 'currentColor' : 'none'} /></button>
-                  <button className="quick-view" type="button" onClick={() => setQuickView(product)} data-testid={`button-quick-view-${product.id}`}>{rtl ? 'نظرة سريعة' : 'Quick view'} <ArrowRight size={14} /></button>
+                  <button className={`favorite-toggle${favorites.includes(product.id) ? ' is-favorite heart-pop' : ''}`} type="button" aria-label={favorites.includes(product.id) ? (rtl ? 'إزالة من المفضلة' : 'Remove from favorites') : (rtl ? 'أضف إلى المفضلة' : 'Add to favorites')} aria-pressed={favorites.includes(product.id)} onClick={(event) => { event.stopPropagation(); toggleFavorite(product.id); toast({ title: favorites.includes(product.id) ? (rtl ? 'أزيل من المفضلة' : 'Removed from favorites') : (rtl ? 'أضيف إلى المفضلة' : 'Added to favorites') }); }} data-testid={`button-favorite-${product.id}`}><Heart size={18} strokeWidth={1.4} fill={favorites.includes(product.id) ? 'currentColor' : 'none'} /></button>
+                  <button className="quick-view" type="button" onClick={(event) => { event.stopPropagation(); openQuickView(product); }} data-testid={`button-quick-view-${product.id}`}>{rtl ? 'نظرة سريعة' : 'Quick view'} <ArrowRight size={14} /></button>
                 </div>
                 <div className="product-info">
                   <div className="product-title-row"><div><h3>{product.name[rtl ? 'ar' : 'en']}</h3><p>{product.concentration[rtl ? 'ar' : 'en']}</p></div><span className="product-price">{formatPrice(product.prices['100ml'])}</span></div>
                   <p className="note-highlights">{product.noteHighlights[rtl ? 'ar' : 'en'].join(' · ')}</p>
-                  <div className="product-buy-row"><span className="size-label">100ml</span><button type="button" className="add-button" data-testid={`button-add-${product.id}`}>{rtl ? 'أضف إلى السلة' : 'Add to Cart'} <span>＋</span></button></div>
+                  <div className="product-buy-row"><span className="size-label">100ml</span><button type="button" className="add-button" onClick={(event) => { event.stopPropagation(); addProduct(product.id, '100ml'); }} data-testid={`button-add-${product.id}`}>{copy.add} <span>＋</span></button></div>
                 </div>
               </article>
             ))}
@@ -343,13 +403,100 @@ function Home() {
         <p className="drawer-signoff">A trace that stays.</p>
       </div>
       {menuOpen && <button className="drawer-scrim" aria-label={rtl ? 'إغلاق القائمة' : 'Close menu'} onClick={() => setMenuOpen(false)} />}
-      {quickView && <div className="quick-view-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setQuickView(null); }}>
-        <section className="quick-view-dialog" role="dialog" aria-modal="true" aria-label={quickView.name[rtl ? 'ar' : 'en']}>
-          <button className="quick-close" type="button" aria-label={rtl ? 'إغلاق' : 'Close'} onClick={() => setQuickView(null)}><X size={20} /></button>
-          <div className="quick-view-art"><div className="product-image-crop" style={{ '--crop-left': `${quickView.crop.column * -100}%`, '--crop-top': `${quickView.crop.row * -100}%`, '--crop-position': quickView.crop.objectPosition } as CSSProperties}><img src={quickView.image} alt="" /></div></div>
-          <div className="quick-view-copy"><p className="section-kicker">{quickView.concentration[rtl ? 'ar' : 'en']}</p><h2>{quickView.name[rtl ? 'ar' : 'en']}</h2><p className="quick-notes">{quickView.noteHighlights[rtl ? 'ar' : 'en'].join(' · ')}</p><p>{quickView.description[rtl ? 'ar' : 'en']}</p><strong>{formatPrice(quickView.prices['100ml'])} <small> / 100ml</small></strong><button type="button" className="cta-primary" onClick={() => setQuickView(null)}>{rtl ? 'متابعة الاكتشاف' : 'Continue exploring'} <Check size={15} /></button></div>
-        </section>
-      </div>}
+      <Dialog open={Boolean(quickView)} onOpenChange={(open) => !open && setQuickView(null)}>
+        {quickView && <DialogContent className="commerce-dialog quick-dialog" dir={rtl ? 'rtl' : 'ltr'}>
+          <DialogTitle className="sr-only">{quickView.name[rtl ? 'ar' : 'en']}</DialogTitle>
+          <DialogDescription className="sr-only">{quickView.description[rtl ? 'ar' : 'en']}</DialogDescription>
+          <div className="quick-view-art"><div className="product-image-crop" style={{ '--crop-left': `${quickView.crop.column * -100}%`, '--crop-top': `${quickView.crop.row * -100}%`, '--crop-position': quickView.crop.objectPosition } as CSSProperties}><img src={quickView.image} alt={quickView.name[rtl ? 'ar' : 'en']} /></div></div>
+          <div className="quick-view-copy">
+            <p className="section-kicker">{quickView.concentration[rtl ? 'ar' : 'en']}</p>
+            <h2>{quickView.name[rtl ? 'ar' : 'en']}</h2>
+            <p>{quickView.description[rtl ? 'ar' : 'en']}</p>
+            <div className="note-pyramid">
+              {(['top', 'heart', 'base'] as const).map((level) => <div key={level}><span>{rtl ? ({ top: 'المقدمة', heart: 'القلب', base: 'القاعدة' }[level]) : ({ top: 'Top notes', heart: 'Heart notes', base: 'Base notes' }[level])}</span><p>{quickView.notes[level][rtl ? 'ar' : 'en'].join(' · ')}</p></div>)}
+            </div>
+            <div className="size-picker" role="group" aria-label={rtl ? 'حجم العبوة' : 'Bottle size'}>
+              {(['50ml', '100ml'] as const).map((size) => <button key={size} type="button" aria-pressed={quickSize === size} className={quickSize === size ? 'selected' : ''} onClick={() => setQuickSize(size)}><span>{size}</span><small>{formatPrice(quickView.prices[size])}</small></button>)}
+            </div>
+            <div className="quick-purchase-row">
+              <div className="quantity-control" aria-label={rtl ? 'الكمية' : 'Quantity'}>
+                <button type="button" aria-label={rtl ? 'تقليل الكمية' : 'Decrease quantity'} onClick={() => setQuickQuantity((qty) => Math.max(1, qty - 1))}><Minus size={15} /></button>
+                <output aria-live="polite">{quickQuantity}</output>
+                <button type="button" aria-label={rtl ? 'زيادة الكمية' : 'Increase quantity'} onClick={() => setQuickQuantity((qty) => Math.min(99, qty + 1))}><Plus size={15} /></button>
+              </div>
+              <button type="button" className="cta-primary quick-add" onClick={() => { addProduct(quickView.id, quickSize, quickQuantity); setQuickView(null); }}>{copy.add} <span>{formatPrice(quickView.prices[quickSize] * quickQuantity)}</span></button>
+            </div>
+          </div>
+        </DialogContent>}
+      </Dialog>
+
+      <Dialog open={searchOpen} onOpenChange={setSearchOpen}>
+        <DialogContent className="commerce-dialog search-dialog" dir={rtl ? 'rtl' : 'ltr'}>
+          <DialogTitle>{rtl ? 'ابحث عن عطرك' : 'Find your fragrance'}</DialogTitle>
+          <DialogDescription>{rtl ? 'ابحث بالاسم أو بالنوتات العطرية.' : 'Search by fragrance name or an olfactive note.'}</DialogDescription>
+          <div className="search-field"><Search size={19} /><input ref={searchInputRef} value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder={rtl ? 'مثال: عود، ورد، مسك' : 'Try oud, rose, musk…'} aria-label={copy.search} data-testid="input-search" /></div>
+          {searchQuery.trim() && <div className="search-results" aria-live="polite">
+            {matchingProducts.length ? matchingProducts.map((product) => <button key={product.id} type="button" className="search-result" onClick={() => { setSearchOpen(false); openQuickView(product); }}><span>{product.name[rtl ? 'ar' : 'en']}</span><small>{product.noteHighlights[rtl ? 'ar' : 'en'].join(' · ')}</small><ArrowRight size={16} /></button>) : <p className="panel-empty">{copy.noResults}</p>}
+          </div>}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={cartOpen} onOpenChange={setCartOpen}>
+        <DialogContent className="commerce-dialog side-dialog" dir={rtl ? 'rtl' : 'ltr'}>
+          <div className="panel-heading"><div><p className="section-kicker">NOIR / 01</p><DialogTitle>{copy.cart} <span className="panel-count">{cartCount}</span></DialogTitle></div><DialogDescription className="sr-only">{rtl ? 'محتويات حقيبة التسوق' : 'Your shopping bag contents'}</DialogDescription></div>
+          {cart.length === 0 ? <div className="panel-empty-state"><ShoppingBag size={32} /><p>{copy.emptyCart}</p><button type="button" className="text-action" onClick={() => { setCartOpen(false); document.getElementById('products')?.scrollIntoView({ behavior: 'smooth' }); }}>{copy.startShopping} <ArrowRight size={15} /></button></div> :
+            <div className="panel-lines">{cart.map((line) => {
+              const product = products.find((item) => item.id === line.productId)!;
+              return <article className="commerce-line" key={`${line.productId}-${line.size}`}>
+                <div className="line-thumb"><div className="product-image-crop" style={{ '--crop-left': `${product.crop.column * -100}%`, '--crop-top': `${product.crop.row * -100}%`, '--crop-position': product.crop.objectPosition } as CSSProperties}><img src={product.image} alt="" /></div></div>
+                <div className="line-detail"><h3>{product.name[rtl ? 'ar' : 'en']}</h3><p>{line.size} · {formatPrice(product.prices[line.size])}</p><div className="quantity-control compact"><button type="button" aria-label={rtl ? 'تقليل الكمية' : 'Decrease quantity'} onClick={() => changeQuantity(line.productId, line.size, -1)}><Minus size={13} /></button><output>{line.quantity}</output><button type="button" aria-label={rtl ? 'زيادة الكمية' : 'Increase quantity'} onClick={() => changeQuantity(line.productId, line.size, 1)}><Plus size={13} /></button></div></div>
+                <div className="line-total"><strong>{formatPrice(product.prices[line.size] * line.quantity)}</strong><button type="button" aria-label={`${copy.remove} ${product.name[rtl ? 'ar' : 'en']}`} onClick={() => { removeFromCart(line.productId, line.size); toast({ title: rtl ? 'أزيل العطر من السلة' : 'Removed from cart' }); }}><Trash2 size={16} /></button></div>
+              </article>;
+            })}</div>}
+          {cart.length > 0 && <div className="panel-footer"><div className="subtotal-row"><span>{copy.subtotal}</span><strong>{formatPrice(subtotal)}</strong></div><button type="button" className="cta-primary panel-cta" onClick={() => { setCartOpen(false); setCheckoutOpen(true); }}>{copy.checkout}<ArrowRight size={16} /></button></div>}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={favoritesOpen} onOpenChange={setFavoritesOpen}>
+        <DialogContent className="commerce-dialog side-dialog" dir={rtl ? 'rtl' : 'ltr'}>
+          <div className="panel-heading"><div><p className="section-kicker">NOIR / 02</p><DialogTitle>{copy.favorites} <span className="panel-count">{favoriteCount}</span></DialogTitle></div><DialogDescription className="sr-only">{rtl ? 'العطور المحفوظة' : 'Saved fragrances'}</DialogDescription></div>
+          {!favorites.length ? <div className="panel-empty-state"><Heart size={32} /><p>{copy.emptyFavorites}</p><button type="button" className="text-action" onClick={() => { setFavoritesOpen(false); document.getElementById('products')?.scrollIntoView({ behavior: 'smooth' }); }}>{copy.startShopping} <ArrowRight size={15} /></button></div> :
+            <div className="panel-lines">{favorites.map((id) => {
+              const product = products.find((item) => item.id === id)!;
+              return <article className="commerce-line favorite-line" key={id}>
+                <button type="button" className="line-thumb thumb-button" onClick={() => { setFavoritesOpen(false); openQuickView(product); }} aria-label={`${rtl ? 'عرض' : 'View'} ${product.name[rtl ? 'ar' : 'en']}`}><div className="product-image-crop" style={{ '--crop-left': `${product.crop.column * -100}%`, '--crop-top': `${product.crop.row * -100}%`, '--crop-position': product.crop.objectPosition } as CSSProperties}><img src={product.image} alt="" /></div></button>
+                <div className="line-detail"><h3>{product.name[rtl ? 'ar' : 'en']}</h3><p>{formatPrice(product.prices['100ml'])} · 100ml</p><button type="button" className="favorite-add" onClick={() => addProduct(product.id, '100ml')}>{copy.add}</button></div>
+                <button type="button" className="remove-favorite" aria-label={`${copy.remove} ${product.name[rtl ? 'ar' : 'en']}`} onClick={() => { removeFavorite(id); toast({ title: rtl ? 'أزيل من المفضلة' : 'Removed from favorites' }); }}><X size={17} /></button>
+              </article>;
+            })}</div>}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={checkoutOpen} onOpenChange={setCheckoutOpen}>
+        <DialogContent className="commerce-dialog checkout-dialog" dir={rtl ? 'rtl' : 'ltr'}>
+          <p className="section-kicker">NOIR / 03</p><DialogTitle>{rtl ? 'تفاصيل التوصيل' : 'Delivery details'}</DialogTitle>
+          <DialogDescription>{rtl ? 'أدخل بياناتك لإتمام الطلب. لن يتم حفظها.' : 'Complete your order. Your details are not saved.'}</DialogDescription>
+          <form className="checkout-form" onSubmit={submitCheckout}>
+            <label>{copy.name}<input name="name" autoComplete="name" required /></label>
+            <label>{copy.phone}<input name="phone" type="tel" autoComplete="tel" required /></label>
+            <label>{copy.address}<textarea name="address" autoComplete="street-address" rows={2} required /></label>
+            <fieldset><legend>{copy.payment}</legend>
+              {[
+                { value: 'card', en: 'Card', ar: 'بطاقة' },
+                { value: 'knet', en: 'KNET', ar: 'كي نت' },
+                { value: 'cash', en: 'Cash on delivery', ar: 'الدفع عند الاستلام' },
+              ].map((method, index) => <label className="payment-option" key={method.value}><input type="radio" name="payment" value={method.value} defaultChecked={index === 0} />{rtl ? method.ar : method.en}</label>)}
+            </fieldset>
+            <div className="subtotal-row checkout-total"><span>{copy.subtotal}</span><strong>{formatPrice(subtotal)}</strong></div>
+            <button type="submit" className="cta-primary panel-cta">{copy.submitOrder}<Check size={16} /></button>
+          </form>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={orderComplete} onOpenChange={setOrderComplete}>
+        <DialogContent className="commerce-dialog confirmation-dialog" dir={rtl ? 'rtl' : 'ltr'}>
+          <span className="confirmation-mark"><Check size={25} /></span><p className="section-kicker">NOIR / 04</p><DialogTitle>{rtl ? 'وصلت رسالتك.' : 'A beautiful choice.'}</DialogTitle><DialogDescription>{copy.orderSuccess}</DialogDescription><button type="button" className="cta-primary panel-cta" onClick={() => setOrderComplete(false)}>{rtl ? 'متابعة التسوق' : 'Continue shopping'}</button>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -374,9 +521,11 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}>
-          <Router />
-        </WouterRouter>
+        <CommerceProvider>
+          <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}>
+            <Router />
+          </WouterRouter>
+        </CommerceProvider>
         <Toaster />
       </TooltipProvider>
     </QueryClientProvider>
