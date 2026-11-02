@@ -1,0 +1,33 @@
+Build a luxury perfume e-commerce website step by step. This is step 1 of 6: project setup, design system, and data. Do NOT build the other sections yet.
+
+BRAND
+- Name: NOIR PERFUMES. Slogan: "Wear the Mystery." (Arabic: "ارتدِ الغموض")
+- Mood: dark, elegant, mysterious, minimal, premium.
+
+TECH
+- React + Vite + Tailwind CSS. No backend. Save cart, favorites, theme, and language in localStorage.
+- Folders: components, data, i18n, styles, assets. Use CSS variables for all colors.
+
+ASSETS (uploaded, use them, do NOT generate SVG bottles)
+- Noir_Perfumes_Luxury_Logo.png: official logo. Use in navbar, footer, and N monogram as favicon. It has a black background, so crop it tightly or place it on a dark pill so it never looks broken in light mode.
+- Noir_Perfumes__Six_Signature_Scents.png: wide lineup photo, for the hero.
+- Noir_Luxury_Perfume_Collection_Grid.png: 2x3 grid of the 6 products. Crop each cell with CSS (object-fit: cover + object-position) for product images: top-left Oud, top-right Rose, middle-left Amber, middle-right Musk, bottom-left Night, bottom-right Bloom.
+
+DESIGN SYSTEM
+- Dark (default): bg #0A0A0A, surface #141414, text #F5F1EA, muted #9A958C, gold #C9A24D
+- Light: bg #FAF7F2, surface #FFFFFF, text #111111, muted #6B665E, gold #A8841A
+- Fonts: English headings "Cormorant Garamond", body "Inter". Arabic: "Cairo". Scale 14/16/20/28/40/64px, body line-height 1.6, wide letter-spacing on uppercase labels.
+- 8px spacing grid, sections 96px padding desktop / 56px mobile, max width 1200px.
+- 12px card radius, 999px pills, 250ms ease transitions, thin gold divider lines.
+- Buttons: Primary (solid gold, dark text), Secondary (outlined gold), circular icon buttons.
+
+PRODUCTS DATA (src/data/products.js), 6 products, all Eau de Parfum, bilingual EN/AR:
+1. Oud (عود): notes Oud, Amber, Vanilla · Unisex, Oud · badge Best Seller
+2. Rose (روز): Rose, Peony, Musk · For Her · badge New
+3. Amber (عنبر): Amber, Cinnamon, Sandalwood · Unisex, Oud
+4. Musk (مسك): White Musk, Cotton, Jasmine · Unisex, Fresh
+5. Night (نايت): Bergamot, Leather, Cedar · For Him
+6. Bloom (بلوم): Iris, Violet, Vanilla · For Her, Fresh
+Each has: name EN/AR, short description EN/AR, top/heart/base notes, image, price in KWD (18 to 35) for 100ml, and a 50ml option with a lower price. Currency must be easy to change.
+
+For now, just set up the project, global styles, theme variables, fonts, and the data file. Show a simple placeholder page to confirm everything runs.

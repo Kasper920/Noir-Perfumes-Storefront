@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "NOIR PERFUMES"
+description = "A bilingual English and Arabic luxury fragrance storefront foundation for NOIR PERFUMES, with an editable six-scent catalog, dark and light theme tokens, and a minimal setup confirmation page."
+version = "1.0.0"
+id = "artifacts/noir-perfumes"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 21746
+
+[services.development]
+run = "pnpm --filter @workspace/noir-perfumes run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/noir-perfumes", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/noir-perfumes/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "21746"
+BASE_PATH = "/"
