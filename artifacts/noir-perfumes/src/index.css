@@ -129,6 +129,19 @@ button:focus-visible, a:focus-visible { outline: 1px solid var(--color-gold); ou
 .nav-link:hover, .nav-link.active { color: #e4c58b; }
 .nav-link.active::after, .nav-link:hover::after { right: 0; left: 0; }
 .header-actions { display: flex; align-items: center; justify-content: flex-end; gap: 11px; }
+.header-account-shell { display: flex; min-width: max-content; flex: 0 0 auto; align-items: center; }
+.site-header .header-account-shell .account-entry-link,
+.site-header .header-account-shell .account-signout { color: rgba(245, 240, 232, .88); }
+.site-header .header-account-shell .account-entry-link:hover,
+.site-header .header-account-shell .account-signout:hover { color: #e4c58b; }
+.site-header.is-scrolled .header-account-shell .account-entry-link,
+.site-header.is-scrolled .header-account-shell .account-signout { color: var(--color-text); }
+@media (min-width: 1001px) {
+  .header-account-shell .account-entry-group { min-width: max-content; flex: 0 0 auto; }
+  .header-account-shell .account-entry-link { min-width: max-content; flex: 0 0 auto; justify-content: flex-start; padding-inline: 6px; }
+  .header-account-shell .account-entry-link > svg { display: block; flex: 0 0 auto; }
+  .header-account-shell .account-entry-link > span { display: inline; white-space: nowrap; }
+}
 .icon-button {
   position: relative;
   display: inline-grid;
@@ -273,6 +286,7 @@ button:focus-visible, a:focus-visible { outline: 1px solid var(--color-gold); ou
   .brand-link { width: 104px; height: 56px; }
   .desktop-nav, .desktop-preferences { display: none; }
   .header-actions { gap: 4px; }
+  .header-account-shell { display: none; }
   .action-button { width: 44px; height: 44px; }
   .header-account { display: none; }
   .mobile-menu-trigger { display: inline-grid; width: 44px; height: 44px; margin-inline-start: 0; }

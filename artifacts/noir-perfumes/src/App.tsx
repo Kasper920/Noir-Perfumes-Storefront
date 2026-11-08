@@ -346,7 +346,7 @@ function Home() {
           ))}
         </nav>
         <div className="header-actions">
-          <AccountEntry />
+          <div className="header-account-shell"><AccountEntry /></div>
           <button className="icon-button action-button" type="button" aria-label={copy.search} onClick={() => { setSearchQuery(''); setSearchOpen(true); }} data-testid="button-search"><Search size={18} strokeWidth={1.5} /></button>
           <button className="icon-button action-button count-action" type="button" aria-label={`${copy.favorites}: ${favoriteCount}`} onClick={() => setFavoritesOpen(true)} data-testid="button-favorites">
             <Heart size={18} strokeWidth={1.5} /><span className="count-badge">{formatNumber(favoriteCount)}</span>
