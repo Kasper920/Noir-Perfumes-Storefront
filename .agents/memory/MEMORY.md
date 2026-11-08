@@ -1,2 +1,3 @@
 - [NOIR visual direction](noir-visual-direction.md) — retain the dark photographic hero in both themes; opaque fallback colors on gradient overlays hide its art.
 - [Dialog drawer positioning](dialog-drawer-positioning.md) — clear Tailwind's translate longhand when reusing a centered dialog as a side drawer.
+- [Backend database choice](backend-scope.md) — user chose Supabase and requested backend, admin dashboard, and customer accounts.
