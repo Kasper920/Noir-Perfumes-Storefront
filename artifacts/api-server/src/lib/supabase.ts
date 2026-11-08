@@ -9,6 +9,7 @@ export const supabase = createClient(
     global: { fetch: (url, init) => fetch(url, { ...init, signal: AbortSignal.timeout(15_000) }) },
   },
 );
+export const PRODUCT_IMAGE_BUCKET = process.env.NOIR_PRODUCT_IMAGE_BUCKET || 'noir-product-images';
 function required(name: string): string {
   const value = process.env[name];
   if (!value) throw new Error(`Missing server configuration: ${name}`);
@@ -20,7 +21,7 @@ export class StoreError extends Error {
 }
 export function checkDb(error: { message: string; code?: string } | null) {
   if (!error) return;
-  const known = ['OUT_OF_STOCK', 'UNAVAILABLE', 'EDIT_CONFLICT', 'IDEMPOTENCY_CONFLICT', 'INVALID_STATUS', 'INVALID_ITEMS', 'INVALID_VARIANTS', 'NOT_FOUND'];
+  const known = ['OUT_OF_STOCK', 'UNAVAILABLE', 'EDIT_CONFLICT', 'IDEMPOTENCY_CONFLICT', 'INVALID_STATUS', 'INVALID_ITEMS', 'INVALID_VARIANTS', 'INVALID_IMAGE_PATH', 'NOT_FOUND'];
   const code = known.find((name) => error.message.includes(name));
   throw new StoreError(code ?? 'STORE_UNAVAILABLE', code === 'NOT_FOUND' ? 404 : code ? 409 : 503);
 }

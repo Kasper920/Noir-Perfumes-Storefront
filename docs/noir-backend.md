@@ -4,7 +4,7 @@
 
 The Express API under `/api` is the only data gateway. Supabase stores the catalog, variant stock/prices, profiles, order snapshots, contact messages, and one-time owner grants. Clerk provides verified customer identity and browser session cookies.
 
-The existing photographs and English/Arabic design remain local assets. Product text, tags, badges, prices, visibility, and stock are loaded from Supabase, not a demo fallback. `src/data/products.js` retains the original catalog for the one-time seed and a currency formatter; it is not used as the storefront data source.
+Product names, English/Arabic descriptions, notes, filters, badges, prices, stock, visibility, and image paths live in the existing Supabase product and variant tables. Product image bytes live in the public `noir-product-images` Supabase Storage bucket and are loaded by URL; this keeps media bytes out of PostgreSQL. The original six-bottle image is uploaded once to the `sprites/noir-product-grid.webp` bucket path and each product keeps its existing crop. New images uploaded from the admin editor replace a product's photo with its own Storage object. `src/data/products.js` retains only the original catalog for initial setup and a currency formatter; it is not used as the storefront data source.
 
 ## Required configuration
 
@@ -38,6 +38,7 @@ Applied additive migration SQL is retained under `supabase/migrations/`:
 1. Store tables, locked checkout, product versioning, and fulfillment transitions.
 2. One-time owner bootstrap.
 3. Restriction of obsolete anonymous submission functions from earlier experiments. Their legacy tables/data were retained.
+4. Product image paths and a transaction that updates catalog images with their expected product version.
 
 All application tables have RLS enabled with no public policies, and `anon`/`authenticated` table privileges are revoked. This intentionally denies direct browser access. All mutation RPCs are security-invoker functions executable only by `service_role`. Normal app requests are authorized by Express first.
 
@@ -48,6 +49,16 @@ node artifacts/api-server/scripts/seed.mjs
 ```
 
 Run it only for initial setup after applying the schema. It inserts missing records and never overwrites admin edits or existing stock. Initial stock was seeded to **50 bottles per size per fragrance as setup data**; replace those quantities with actual stock in `/admin` before accepting real orders.
+
+Initial bucket setup and migration of existing artwork:
+
+```sh
+node artifacts/api-server/scripts/setup-product-images.mjs
+```
+
+This safely creates the public `noir-product-images` bucket (5 MB limit; JPEG, PNG, and WebP only), uploads the existing optimized catalog image, and links any seeded products that don't yet have an image. It keeps existing admin-uploaded image paths unchanged. Product images are public so they can appear on the storefront; only authenticated server-side admin endpoints can upload or replace them. The server verifies file signatures, enforces the file size and allowed formats, writes with the service key only on the server, and checks product versions to avoid overwriting concurrent edits.
+
+In the admin dashboard, choose a fragrance and use **Upload a photo**. New products must be saved before their first upload. Uploading a photo saves it immediately and updates the product photo in the store without changing its name, notes, price, or stock.
 
 Post-merge setup installs dependencies and builds shared types. It intentionally does not push the unused Replit database, modify remote schema, or reset inventory.
 

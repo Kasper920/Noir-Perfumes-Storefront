@@ -13,7 +13,7 @@ const db = createClient(new URL(url).origin, key, { auth: { persistSession: fals
 for (const [position, product] of products.entries()) {
   const { id, image, crop, prices, badge, ...content } = product;
   const { error } = await db.from('noir_products').upsert({
-    id, content: { ...content, imageKey: id, ...(badge ? { badge } : {}) }, active: true, position,
+    id, content: { ...content, imageKey: id, ...(badge ? { badge } : {}) }, image_path: 'sprites/noir-product-grid.webp', active: true, position,
   }, { onConflict: 'id', ignoreDuplicates: true });
   if (error) throw new Error('Catalog seed failed');
   const { error: variantError } = await db.from('noir_variants').upsert(

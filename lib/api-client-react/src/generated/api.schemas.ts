@@ -91,6 +91,12 @@ export interface ProductInput {
   collections: LocalList;
   badge?: LocalText;
   imageKey: ProductInputImageKey;
+  /**
+     * @maxLength 256
+     * @nullable
+     * @pattern ^(sprites/noir-product-grid\.webp|[a-z0-9-]{2,60}/[a-f0-9]{32}\.(jpg|png|webp))$
+     */
+  imagePath: string | null;
   active: boolean;
   /** @minimum 0 */
   version: number;
@@ -101,7 +107,26 @@ export interface ProductInput {
   variants: Variant[];
 }
 
-export type Product = ProductInput;
+export type Product = ProductInput & ({
+  /**
+     * @maxLength 2048
+     * @nullable
+     */
+  imageUrl: string | null;
+  updatedAt?: string;
+});
+
+export interface ProductImageResult {
+  /**
+     * @minLength 1
+     * @maxLength 256
+     */
+  imagePath: string;
+  /** @maxLength 2048 */
+  imageUrl: string;
+  /** @minimum 1 */
+  version: number;
+}
 
 export interface ProfileInput {
   /**

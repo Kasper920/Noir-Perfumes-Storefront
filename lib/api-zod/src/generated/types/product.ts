@@ -7,4 +7,11 @@
  */
 import type { ProductInput } from './productInput';
 
-export type Product = ProductInput;
+export type Product = ProductInput & ({
+  /**
+     * @maxLength 2048
+     * @nullable
+     */
+  imageUrl: string | null;
+  updatedAt?: Date;
+});

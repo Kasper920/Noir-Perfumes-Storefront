@@ -1,12 +1,12 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type ChangeEvent } from 'react';
 import { Link } from 'wouter';
 import { useQueryClient } from '@tanstack/react-query';
-import { Archive, Check, Mail, Pencil, Plus, RotateCcw, X } from 'lucide-react';
+import { Archive, Check, ImagePlus, Mail, Pencil, Plus, RotateCcw, X } from 'lucide-react';
 import {
   getGetAdminMessagesQueryKey, getGetAdminOrdersQueryKey, getGetAdminProductsQueryKey, getGetCatalogQueryKey,
   getGetProfileQueryKey, getGetMyOrdersQueryKey,
   useGetAdminMessages, useGetAdminOrders, useGetAdminProducts, useGetProfile,
-  useSaveAdminProduct, useUpdateAdminMessage, useUpdateAdminOrder,
+  useSaveAdminProduct, useUploadAdminProductImage, useUpdateAdminMessage, useUpdateAdminOrder,
   ProductInputImageKey,
   type LocalList, type Order, type OrderStatusInputStatus, type Product, type ProductInput,
 } from '@workspace/api-client-react';
@@ -22,7 +22,7 @@ const blankProduct = (): ProductInput => ({
   id: '', name: { en: '', ar: '' }, concentration: { en: '', ar: '' }, description: { en: '', ar: '' },
   notes: { top: emptyList(), heart: emptyList(), base: emptyList() },
   noteHighlights: emptyList(), audience: emptyList(), collections: emptyList(),
-  imageKey: 'oud', active: true, version: 0,
+  imageKey: 'oud', imagePath: null, active: true, version: 0,
   variants: [{ size: '50ml', price: 0, stock: 0 }, { size: '100ml', price: 0, stock: 0 }],
 });
 const clone = <T,>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
@@ -85,11 +85,15 @@ function BiText({ title, value, onChange, multiline, invalid, hint, testId }: { 
 }
 
 /* ---------- product editor ---------- */
-function ProductEditor({ initial, onClose, onReload }: { initial: ProductInput; onClose: () => void; onReload: () => Promise<ProductInput | null> }) {
+function ProductEditor({ initial, initialImageUrl, onClose, onReload }: { initial: ProductInput; initialImageUrl: string | null; onClose: () => void; onReload: () => Promise<ProductInput | null> }) {
   const { t, rtl } = usePortal();
   const qc = useQueryClient();
   const save = useSaveAdminProduct();
+  const imageUpload = useUploadAdminProductImage();
   const [draft, setDraft] = useState<ProductInput>(() => clone(initial));
+  const [imagePreview, setImagePreview] = useState<string | null>(initialImageUrl);
+  const [imageError, setImageError] = useState<'invalid' | 'upload' | false>(false);
+  const [imageSaved, setImageSaved] = useState(false);
   const [badge, setBadge] = useState(initial.badge ?? { en: '', ar: '' });
   const [showErrors, setShowErrors] = useState(false);
   const [error, setError] = useState<{ msg: string; conflict: boolean } | null>(null);
@@ -149,9 +153,34 @@ function ProductEditor({ initial, onClose, onReload }: { initial: ProductInput; 
       setError({ msg: conflict ? t.conflict : t.genericError, conflict });
     }
   };
+  const uploadPhoto = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.currentTarget.files?.[0];
+    event.currentTarget.value = '';
+    if (!file || isNew) return;
+    if (file.size > 5 * 1024 * 1024 || !['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+      setImageError('invalid');
+      setImageSaved(false);
+      return;
+    }
+    setImageError(false);
+    setImageSaved(false);
+    try {
+      const uploaded = await imageUpload.mutateAsync({ id: draft.id, version: draft.version, data: file });
+      setDraft((current) => ({ ...current, imagePath: uploaded.imagePath, version: uploaded.version }));
+      setImagePreview(uploaded.imageUrl);
+      setImageSaved(true);
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: getGetAdminProductsQueryKey() }),
+        qc.invalidateQueries({ queryKey: getGetCatalogQueryKey() }),
+      ]);
+    } catch (err) {
+      setImageError('upload');
+      if (errorStatus(err) === 409) setError({ msg: t.conflict, conflict: true });
+    }
+  };
   const reload = async () => {
     const fresh = await onReload();
-    if (fresh) { setDraft(clone(fresh)); setBadge(fresh.badge ?? { en: '', ar: '' }); setError(null); setShowErrors(false); }
+    if (fresh) { setDraft(clone(fresh)); setBadge(fresh.badge ?? { en: '', ar: '' }); setImagePreview(null); setImageSaved(false); setImageError(false); setError(null); setShowErrors(false); }
   };
   const v = (i: number) => draft.variants[i];
   const setVariant = (i: number, patch: Partial<ProductInput['variants'][number]>) =>
@@ -189,6 +218,21 @@ function ProductEditor({ initial, onClose, onReload }: { initial: ProductInput; 
                   <span>{key}</span>
                 </label>
               ))}
+            </div>
+            <div className="product-photo-upload">
+              <ProductArt imageKey={draft.imageKey} imageUrl={imagePreview} imagePath={imagePreview ? 'preview/uploaded.webp' : draft.imagePath} label={draft.name[rtl ? 'ar' : 'en'] || t.productPhoto} className="photo-preview" />
+              <div className="product-photo-fields">
+                <strong>{t.productPhoto}</strong>
+                <p className="field-hint">{t.photoHint}</p>
+                {isNew ? <p className="field-hint">{t.photoSaveFirst}</p> : (
+                  <label className={`ghost-btn photo-upload-button${imageUpload.isPending ? ' is-busy' : ''}`} htmlFor={`photo-${draft.id}`} aria-disabled={imageUpload.isPending}>
+                    <ImagePlus size={15} />{imageUpload.isPending ? t.uploadingPhoto : t.uploadPhoto}
+                    <input id={`photo-${draft.id}`} type="file" accept="image/jpeg,image/png,image/webp" onChange={uploadPhoto} disabled={imageUpload.isPending} />
+                  </label>
+                )}
+                {imageError && <p className="field-error" role="alert">{imageError === 'invalid' ? t.photoTooLarge : t.photoError}</p>}
+                {imageSaved && <p className="field-hint" role="status">{t.photoSaved}</p>}
+              </div>
             </div>
           </section>
           <section className="editor-sec">
@@ -244,7 +288,7 @@ function ProductEditor({ initial, onClose, onReload }: { initial: ProductInput; 
           )}
           <div className="editor-actions">
             <button type="button" className="ghost-btn" onClick={onClose}>{t.cancel}</button>
-            <button type="submit" className="gold-btn" disabled={save.isPending} data-testid="button-save-product">{save.isPending ? t.saving : isNew ? t.createProduct : t.save}</button>
+            <button type="submit" className="gold-btn" disabled={save.isPending || imageUpload.isPending} data-testid="button-save-product">{save.isPending ? t.saving : isNew ? t.createProduct : t.save}</button>
           </div>
         </footer>
       </form>
@@ -289,7 +333,7 @@ function Catalog({ enabled }: { enabled: boolean }) {
         <ul className="catalog-list">
           {q.data.map((p) => (
             <li key={p.id} className={`catalog-row${p.active ? '' : ' is-archived'}`} data-testid={`row-product-${p.id}`}>
-              <ProductArt imageKey={p.imageKey} label={p.name[language]} className="thumb" />
+              <ProductArt imageKey={p.imageKey} imageUrl={p.imageUrl} imagePath={p.imagePath} label={p.name[language]} className="thumb" />
               <div className="cat-name">
                 <strong>{p.name[language]}</strong>
                 <span className="muted small">{p.concentration[language]} · <span className="mono">{p.id}</span></span>
@@ -315,7 +359,7 @@ function Catalog({ enabled }: { enabled: boolean }) {
           ))}
         </ul>
       )}
-      {editing && <ProductEditor key={`${editing.id}-${editing.version}`} initial={editing} onClose={() => setEditing(null)} onReload={() => reloadOne(editing.id)} />}
+      {editing && <ProductEditor key={`${editing.id}-${editing.version}`} initial={editing} initialImageUrl={q.data?.find((p) => p.id === editing.id)?.imageUrl ?? null} onClose={() => setEditing(null)} onReload={() => reloadOne(editing.id)} />}
     </div>
   );
 }

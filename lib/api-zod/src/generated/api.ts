@@ -82,6 +82,10 @@ export const getCatalogResponseOneBadgeEnMax = 3000;
 
 export const getCatalogResponseOneBadgeArMax = 3000;
 
+export const getCatalogResponseOneImagePathMax = 256;
+
+
+export const getCatalogResponseOneImagePathRegExp = new RegExp('^(sprites/noir-product-grid\\.webp|[a-z0-9-]{2,60}/[a-f0-9]{32}\\.(jpg|png|webp))$');
 export const getCatalogResponseOneVersionMin = 0;
 
 export const getCatalogResponseOneVariantsItemPriceMin = 0.001;
@@ -92,6 +96,8 @@ export const getCatalogResponseOneVariantsItemStockMax = 100000;
 
 export const getCatalogResponseOneVariantsMin = 2;
 export const getCatalogResponseOneVariantsMax = 2;
+
+export const getCatalogResponseTwoImageUrlMax = 2048;
 
 
 
@@ -140,6 +146,7 @@ export const GetCatalogResponseItem = zod.object({
   "ar": zod.string().min(1).max(getCatalogResponseOneBadgeArMax)
 }).optional(),
   "imageKey": zod.enum(['oud', 'rose', 'amber', 'musk', 'night', 'bloom']),
+  "imagePath": zod.string().max(getCatalogResponseOneImagePathMax).regex(getCatalogResponseOneImagePathRegExp).nullable(),
   "active": zod.boolean(),
   "version": zod.number().int().min(getCatalogResponseOneVersionMin),
   "variants": zod.array(zod.object({
@@ -147,7 +154,10 @@ export const GetCatalogResponseItem = zod.object({
   "price": zod.number().min(getCatalogResponseOneVariantsItemPriceMin).max(getCatalogResponseOneVariantsItemPriceMax),
   "stock": zod.number().int().min(getCatalogResponseOneVariantsItemStockMin).max(getCatalogResponseOneVariantsItemStockMax)
 })).min(getCatalogResponseOneVariantsMin).max(getCatalogResponseOneVariantsMax)
-})
+}).and(zod.object({
+  "imageUrl": zod.string().url().max(getCatalogResponseTwoImageUrlMax).nullable(),
+  "updatedAt": zod.coerce.date().optional()
+}))
 export const GetCatalogResponse = zod.array(GetCatalogResponseItem)
 
 
@@ -377,6 +387,10 @@ export const getAdminProductsResponseOneBadgeEnMax = 3000;
 
 export const getAdminProductsResponseOneBadgeArMax = 3000;
 
+export const getAdminProductsResponseOneImagePathMax = 256;
+
+
+export const getAdminProductsResponseOneImagePathRegExp = new RegExp('^(sprites/noir-product-grid\\.webp|[a-z0-9-]{2,60}/[a-f0-9]{32}\\.(jpg|png|webp))$');
 export const getAdminProductsResponseOneVersionMin = 0;
 
 export const getAdminProductsResponseOneVariantsItemPriceMin = 0.001;
@@ -387,6 +401,8 @@ export const getAdminProductsResponseOneVariantsItemStockMax = 100000;
 
 export const getAdminProductsResponseOneVariantsMin = 2;
 export const getAdminProductsResponseOneVariantsMax = 2;
+
+export const getAdminProductsResponseTwoImageUrlMax = 2048;
 
 
 
@@ -435,6 +451,7 @@ export const GetAdminProductsResponseItem = zod.object({
   "ar": zod.string().min(1).max(getAdminProductsResponseOneBadgeArMax)
 }).optional(),
   "imageKey": zod.enum(['oud', 'rose', 'amber', 'musk', 'night', 'bloom']),
+  "imagePath": zod.string().max(getAdminProductsResponseOneImagePathMax).regex(getAdminProductsResponseOneImagePathRegExp).nullable(),
   "active": zod.boolean(),
   "version": zod.number().int().min(getAdminProductsResponseOneVersionMin),
   "variants": zod.array(zod.object({
@@ -442,7 +459,10 @@ export const GetAdminProductsResponseItem = zod.object({
   "price": zod.number().min(getAdminProductsResponseOneVariantsItemPriceMin).max(getAdminProductsResponseOneVariantsItemPriceMax),
   "stock": zod.number().int().min(getAdminProductsResponseOneVariantsItemStockMin).max(getAdminProductsResponseOneVariantsItemStockMax)
 })).min(getAdminProductsResponseOneVariantsMin).max(getAdminProductsResponseOneVariantsMax)
-})
+}).and(zod.object({
+  "imageUrl": zod.string().url().max(getAdminProductsResponseTwoImageUrlMax).nullable(),
+  "updatedAt": zod.coerce.date().optional()
+}))
 export const GetAdminProductsResponse = zod.array(GetAdminProductsResponseItem)
 
 
@@ -511,6 +531,10 @@ export const saveAdminProductBodyBadgeEnMax = 3000;
 
 export const saveAdminProductBodyBadgeArMax = 3000;
 
+export const saveAdminProductBodyImagePathMax = 256;
+
+
+export const saveAdminProductBodyImagePathRegExp = new RegExp('^(sprites/noir-product-grid\\.webp|[a-z0-9-]{2,60}/[a-f0-9]{32}\\.(jpg|png|webp))$');
 export const saveAdminProductBodyVersionMin = 0;
 
 export const saveAdminProductBodyVariantsItemPriceMin = 0.001;
@@ -569,6 +593,7 @@ export const SaveAdminProductBody = zod.object({
   "ar": zod.string().min(1).max(saveAdminProductBodyBadgeArMax)
 }).optional(),
   "imageKey": zod.enum(['oud', 'rose', 'amber', 'musk', 'night', 'bloom']),
+  "imagePath": zod.string().max(saveAdminProductBodyImagePathMax).regex(saveAdminProductBodyImagePathRegExp).nullable(),
   "active": zod.boolean(),
   "version": zod.number().int().min(saveAdminProductBodyVersionMin),
   "variants": zod.array(zod.object({
@@ -643,6 +668,10 @@ export const saveAdminProductResponseOneBadgeEnMax = 3000;
 
 export const saveAdminProductResponseOneBadgeArMax = 3000;
 
+export const saveAdminProductResponseOneImagePathMax = 256;
+
+
+export const saveAdminProductResponseOneImagePathRegExp = new RegExp('^(sprites/noir-product-grid\\.webp|[a-z0-9-]{2,60}/[a-f0-9]{32}\\.(jpg|png|webp))$');
 export const saveAdminProductResponseOneVersionMin = 0;
 
 export const saveAdminProductResponseOneVariantsItemPriceMin = 0.001;
@@ -653,6 +682,8 @@ export const saveAdminProductResponseOneVariantsItemStockMax = 100000;
 
 export const saveAdminProductResponseOneVariantsMin = 2;
 export const saveAdminProductResponseOneVariantsMax = 2;
+
+export const saveAdminProductResponseTwoImageUrlMax = 2048;
 
 
 
@@ -701,6 +732,7 @@ export const SaveAdminProductResponse = zod.object({
   "ar": zod.string().min(1).max(saveAdminProductResponseOneBadgeArMax)
 }).optional(),
   "imageKey": zod.enum(['oud', 'rose', 'amber', 'musk', 'night', 'bloom']),
+  "imagePath": zod.string().max(saveAdminProductResponseOneImagePathMax).regex(saveAdminProductResponseOneImagePathRegExp).nullable(),
   "active": zod.boolean(),
   "version": zod.number().int().min(saveAdminProductResponseOneVersionMin),
   "variants": zod.array(zod.object({
@@ -708,6 +740,35 @@ export const SaveAdminProductResponse = zod.object({
   "price": zod.number().min(saveAdminProductResponseOneVariantsItemPriceMin).max(saveAdminProductResponseOneVariantsItemPriceMax),
   "stock": zod.number().int().min(saveAdminProductResponseOneVariantsItemStockMin).max(saveAdminProductResponseOneVariantsItemStockMax)
 })).min(saveAdminProductResponseOneVariantsMin).max(saveAdminProductResponseOneVariantsMax)
+}).and(zod.object({
+  "imageUrl": zod.string().url().max(saveAdminProductResponseTwoImageUrlMax).nullable(),
+  "updatedAt": zod.coerce.date().optional()
+}))
+
+
+/**
+ * @summary Upload a product image to public Supabase Storage
+ */
+export const uploadAdminProductImagePathIdRegExp = new RegExp('^[a-z0-9-]{2,60}$');
+
+
+
+export const UploadAdminProductImageParams = zod.object({
+  "id": zod.coerce.string().regex(uploadAdminProductImagePathIdRegExp),
+  "version": zod.coerce.number().int().min(1)
+})
+
+export const uploadAdminProductImageResponseImagePathMax = 256;
+
+export const uploadAdminProductImageResponseImageUrlMax = 2048;
+
+
+
+
+export const UploadAdminProductImageResponse = zod.object({
+  "imagePath": zod.string().min(1).max(uploadAdminProductImageResponseImagePathMax),
+  "imageUrl": zod.string().url().max(uploadAdminProductImageResponseImageUrlMax),
+  "version": zod.number().int().min(1)
 })
 
 

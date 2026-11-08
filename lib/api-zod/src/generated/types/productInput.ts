@@ -23,6 +23,12 @@ export interface ProductInput {
   collections: LocalList;
   badge?: LocalText;
   imageKey: ProductInputImageKey;
+  /**
+     * @maxLength 256
+     * @nullable
+     * @pattern ^(sprites/noir-product-grid\.webp|[a-z0-9-]{2,60}/[a-f0-9]{32}\.(jpg|png|webp))$
+     */
+  imagePath: string | null;
   active: boolean;
   /** @minimum 0 */
   version: number;

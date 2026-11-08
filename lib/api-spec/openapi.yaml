@@ -146,6 +146,30 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Product' }
+  /admin/products/{id}/image/{version}:
+    put:
+      operationId: uploadAdminProductImage
+      summary: Upload a product image to public Supabase Storage
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string, pattern: '^[a-z0-9-]{2,60}$' } }
+        - { in: path, name: version, required: true, schema: { type: integer, minimum: 1 } }
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary }
+      responses:
+        <<: *storeErrors
+        '415':
+          description: Only PNG, JPEG, and WebP image files are accepted
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StoreFailure' }
+        '200':
+          description: Image stored and linked to the product
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProductImageResult' }
   /admin/orders:
     get:
       operationId: getAdminOrders
@@ -242,7 +266,7 @@ components:
         stock: { type: integer, minimum: 0, maximum: 100000 }
     ProductInput:
       type: object
-      required: [id, name, concentration, description, notes, noteHighlights, audience, collections, imageKey, active, variants, version]
+      required: [id, name, concentration, description, notes, noteHighlights, audience, collections, imageKey, imagePath, active, variants, version]
       properties:
         id: { type: string, pattern: '^[a-z0-9-]{2,60}$' }
         name: { $ref: '#/components/schemas/LocalText' }
@@ -254,6 +278,7 @@ components:
         collections: { $ref: '#/components/schemas/LocalList' }
         badge: { $ref: '#/components/schemas/LocalText' }
         imageKey: { type: string, enum: [oud, rose, amber, musk, night, bloom] }
+        imagePath: { type: [string, 'null'], maxLength: 256, pattern: '^(sprites/noir-product-grid\.webp|[a-z0-9-]{2,60}/[a-f0-9]{32}\.(jpg|png|webp))$' }
         active: { type: boolean }
         version: { type: integer, minimum: 0 }
         variants:
@@ -264,6 +289,18 @@ components:
     Product:
       allOf:
         - $ref: '#/components/schemas/ProductInput'
+        - type: object
+          required: [imageUrl]
+          properties:
+            imageUrl: { type: [string, 'null'], format: uri, maxLength: 2048 }
+            updatedAt: { type: string, format: date-time }
+    ProductImageResult:
+      type: object
+      required: [imagePath, imageUrl, version]
+      properties:
+        imagePath: { type: string, minLength: 1, maxLength: 256 }
+        imageUrl: { type: string, format: uri, maxLength: 2048 }
+        version: { type: integer, minimum: 1 }
     ProfileInput:
       type: object
       required: [name, phone, address]

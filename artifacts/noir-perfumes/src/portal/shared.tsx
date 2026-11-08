@@ -5,6 +5,7 @@ import { ArrowLeft, LogOut, Moon, RotateCcw, Sun } from 'lucide-react';
 import { getGetProfileQueryKey, useGetProfile } from '@workspace/api-client-react';
 import { useSitePreferences } from '../site-preferences';
 import { products } from '../data/products';
+import { productCrop } from '../catalog-context';
 import { portalCopy } from './copy';
 import '../portal.css';
 
@@ -119,13 +120,17 @@ export function SkeletonRows({ count = 3 }: { count?: number }) {
   return <div className="portal-skeleton" aria-hidden="true">{Array.from({ length: count }, (_, i) => <span key={i} style={{ animationDelay: `${i * 90}ms` }} />)}</div>;
 }
 
-export function ProductArt({ imageKey, label, className }: { imageKey: string; label: string; className?: string }) {
+export function ProductArt({ imageKey, imageUrl, imagePath, label, className }: {
+  imageKey: string; imageUrl?: string | null; imagePath?: string | null; label: string; className?: string;
+}) {
   const art = products.find((p) => p.id === imageKey) ?? products[0];
   if (!art) return <div className={`product-art ${className ?? ''}`} />;
+  const crop = productCrop(imageKey, imagePath);
+  const single = Boolean(imageUrl && imagePath !== 'sprites/noir-product-grid.webp');
   return (
     <div className={`product-art ${className ?? ''}`}>
-      <div className="product-image-crop" style={{ '--crop-left': `${art.crop.column * -100}%`, '--crop-top': `${art.crop.row * -100}%`, '--crop-position': art.crop.objectPosition } as CSSProperties}>
-        <img src={art.image} alt={label} loading="lazy" />
+      <div className={`product-image-crop${single ? ' is-single' : ''}`} style={{ '--crop-left': `${crop.column * -100}%`, '--crop-top': `${crop.row * -100}%`, '--crop-position': crop.objectPosition } as CSSProperties}>
+        <img src={imageUrl ?? art.image} alt={label} loading="lazy" />
       </div>
     </div>
   );

@@ -25,6 +25,7 @@ export * from './orderStatus';
 export * from './orderStatusInput';
 export * from './orderStatusInputStatus';
 export * from './product';
+export * from './productImageResult';
 export * from './productInput';
 export * from './productInputImageKey';
 export * from './profile';

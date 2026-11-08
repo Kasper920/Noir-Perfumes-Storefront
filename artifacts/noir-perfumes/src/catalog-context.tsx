@@ -5,14 +5,26 @@ import type { LocalProduct } from './data/products';
 
 export type StoreProduct = LocalProduct & Product & { stock: Record<'50ml' | '100ml', number> };
 const imageKeys = ['oud', 'rose', 'amber', 'musk', 'night', 'bloom'];
-export function adaptProduct(product: Product): StoreProduct {
-  const index = Math.max(0, imageKeys.indexOf(product.imageKey));
+const catalogSprite = 'sprites/noir-product-grid.webp';
+
+export function productCrop(imageKey: string, imagePath?: string | null): LocalProduct['crop'] {
+  if (imagePath && imagePath !== catalogSprite) {
+    return { column: 0, row: 0, columns: 1, rows: 1, objectFit: 'cover', objectPosition: '50% 50%' };
+  }
+  const index = Math.max(0, imageKeys.indexOf(imageKey));
   return {
-    ...product, image: productGrid,
+    column: index % 2, row: Math.floor(index / 2), columns: 2, rows: 3,
+    objectFit: 'cover', objectPosition: `${index % 2 * 100}% ${Math.floor(index / 2) * 50}%`,
+  };
+}
+
+export function adaptProduct(product: Product): StoreProduct {
+  return {
+    ...product, image: product.imageUrl ?? productGrid,
     badge: product.badge ?? null,
     prices: Object.fromEntries(product.variants.map((v) => [v.size, v.price])) as StoreProduct['prices'],
     stock: Object.fromEntries(product.variants.map((v) => [v.size, v.stock])) as StoreProduct['stock'],
-    crop: { column: index % 2, row: Math.floor(index / 2), columns: 2, rows: 3, objectFit: 'cover', objectPosition: `${index % 2 * 100}% ${Math.floor(index / 2) * 50}%` },
+    crop: productCrop(product.imageKey, product.imagePath),
   } as StoreProduct;
 }
 type CatalogValue = { products: StoreProduct[]; loading: boolean; error: boolean; reload: () => void };

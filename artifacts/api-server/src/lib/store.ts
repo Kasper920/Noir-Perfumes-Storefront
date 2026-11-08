@@ -1,13 +1,15 @@
 import type { Product, Order, ContactMessage, Profile } from '@workspace/api-zod';
-import { supabase, checkDb, StoreError } from './supabase';
+import { supabase, checkDb, StoreError, PRODUCT_IMAGE_BUCKET } from './supabase';
 
 export async function catalog(admin = false): Promise<Product[]> {
-  let query = supabase.from('noir_products').select('id,content,active,version,noir_variants(size,price,stock)').order('position').order('id');
+  let query = supabase.from('noir_products').select('id,content,active,version,image_path,noir_variants(size,price,stock)').order('position').order('id');
   if (!admin) query = query.eq('active', true);
   const { data, error } = await query;
   checkDb(error);
   return (data ?? []).map((p) => ({
     ...p.content, id: p.id, active: p.active, version: p.version,
+    imagePath: p.image_path ?? null,
+    imageUrl: p.image_path ? supabase.storage.from(PRODUCT_IMAGE_BUCKET).getPublicUrl(p.image_path).data.publicUrl : null,
     variants: p.noir_variants.map((v: { size: string; price: number; stock: number }) => ({ ...v, price: Number(v.price) })),
   }));
 }
