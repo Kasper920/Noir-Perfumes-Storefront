@@ -111,9 +111,17 @@ export function AuthPage({ mode }: { mode: AuthPageMode }) {
   const signUpView = formMode === 'sign-up';
   const resetView = formMode === 'reset-password';
   const forgotView = formMode === 'forgot-password';
-  const authFailureText = (failure: { code?: string; message?: string; status?: number }, fallback: string) =>
-    failure.code === 'invalid_api_key' || failure.message === 'Invalid API key' || (failure.status ?? 0) >= 500
-      ? t.serviceError : fallback;
+  const authFailureText = (failure: { code?: string; message?: string; status?: number }, fallback: string) => {
+    if (failure.code === 'invalid_api_key' || failure.message === 'Invalid API key' || (failure.status ?? 0) >= 500) {
+      return t.serviceError;
+    }
+    if (failure.code === 'email_address_invalid') return t.invalidEmail;
+    if (['email_exists', 'user_already_exists', 'user_already_registered'].includes(failure.code ?? '')) {
+      return t.accountExists;
+    }
+    if (failure.code === 'email_not_confirmed') return t.confirmEmailFirst;
+    return fallback;
+  };
 
   useEffect(() => setFormMode(mode), [mode]);
   useEffect(() => {
