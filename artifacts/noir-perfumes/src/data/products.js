@@ -176,5 +176,6 @@ export const formatPrice = (amount, language = 'en') =>
   new Intl.NumberFormat(language === 'ar' ? 'ar-KW' : STORE_CONFIG.locale, {
     style: 'currency',
     currency: STORE_CONFIG.currency,
-    maximumFractionDigits: 0,
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 3,
   }).format(amount);

@@ -1,4 +1,5 @@
 @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700&family=Cormorant+Garamond:wght@400;500;600&family=DM+Sans:wght@400;500;600;700&display=swap');
+@layer theme, base, clerk, components, utilities;
 @import 'tailwindcss';
 @import 'tw-animate-css';
 @plugin "@tailwindcss/typography";
@@ -64,7 +65,9 @@
 html { min-width: 320px; scroll-behavior: smooth; }
 body {
   margin: 0;
-  min-width: 320px;
+  /* Let Radix reserve its scrollbar margin at the 320px breakpoint.
+     A body min-width of 320px plus that 15px margin overflows the root. */
+  min-width: 0;
   min-height: 100vh;
   background: var(--color-bg);
   color: var(--color-text);
@@ -411,6 +414,16 @@ button:focus-visible, a:focus-visible { outline: 1px solid var(--color-gold); ou
 }
 @media (prefers-reduced-motion: reduce) { .scroll-reveal { opacity: 1; transform: none; transition: none; } }
 .noir-app { overflow-x: clip; }
+.store-error { color: var(--color-text); padding: 12px; border-inline-start: 2px solid #be6053; font-size: 13px; }
+.store-error button { min-height: 44px; padding-inline: 12px; border: 1px solid var(--color-divider); background: var(--color-surface); cursor: pointer; }
+.payment-notice { color: var(--color-muted); font-size: 12px; line-height: 1.7; }
+button:disabled { cursor: not-allowed; opacity: .55; transform: none; }
+.unavailable-line { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+@media (max-width: 430px) {
+  .site-header .brand-link { width: 64px; height: 48px; }
+  .site-header { padding-inline: 12px; grid-template-columns: minmax(0, 1fr) auto; }
+  .site-header .header-actions { gap: 0; }
+}
 [dir] .commerce-dialog.side-dialog {
   inset: 0 !important;
   inset-inline-start: auto !important;

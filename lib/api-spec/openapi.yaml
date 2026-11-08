@@ -10,6 +10,19 @@ servers:
 tags:
   - name: health
     description: Health operations
+x-store-errors: &storeErrors
+  '400': &failure
+    description: Request rejected; error contains a stable machine-readable code
+    content:
+      application/json:
+        schema: { $ref: '#/components/schemas/StoreFailure' }
+  '401': *failure
+  '403': *failure
+  '404': *failure
+  '409': *failure
+  '413': *failure
+  '429': *failure
+  '503': *failure
 paths:
   /healthz:
     get:
@@ -24,8 +37,176 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /catalog:
+    get:
+      operationId: getCatalog
+      responses:
+        <<: *storeErrors
+        '200':
+          description: Active catalog
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/Product' } }
+  /profile:
+    get:
+      operationId: getProfile
+      responses:
+        <<: *storeErrors
+        '200':
+          description: Current customer
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Profile' }
+    patch:
+      operationId: updateProfile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProfileInput' }
+      responses:
+        <<: *storeErrors
+        '200':
+          description: Saved profile
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Profile' }
+  /orders:
+    post:
+      operationId: placeOrder
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OrderInput' }
+      responses:
+        <<: *storeErrors
+        '201':
+          description: Order received, no payment processed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrderReceipt' }
+    get:
+      operationId: getMyOrders
+      responses:
+        <<: *storeErrors
+        '200':
+          description: Own orders
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/Order' } }
+  /orders/{id}:
+    get:
+      operationId: getMyOrder
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        <<: *storeErrors
+        '200':
+          description: Own order details
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Order' }
+  /contact:
+    post:
+      operationId: sendContact
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ContactInput' }
+      responses:
+        <<: *storeErrors
+        '201':
+          description: Message received
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SavedResult' }
+  /admin/products:
+    get:
+      operationId: getAdminProducts
+      responses:
+        <<: *storeErrors
+        '200':
+          description: All products
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/Product' } }
+    post:
+      operationId: saveAdminProduct
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProductInput' }
+      responses:
+        <<: *storeErrors
+        '200':
+          description: Saved product
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Product' }
+  /admin/orders:
+    get:
+      operationId: getAdminOrders
+      responses:
+        <<: *storeErrors
+        '200':
+          description: Store orders
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/Order' } }
+  /admin/orders/{id}:
+    patch:
+      operationId: updateAdminOrder
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OrderStatusInput' }
+      responses:
+        <<: *storeErrors
+        '200':
+          description: Updated order
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Order' }
+  /admin/messages:
+    get:
+      operationId: getAdminMessages
+      responses:
+        <<: *storeErrors
+        '200':
+          description: Contact messages
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/ContactMessage' } }
+  /admin/messages/{id}:
+    patch:
+      operationId: updateAdminMessage
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MessageStatusInput' }
+      responses:
+        <<: *storeErrors
+        '200':
+          description: Updated message
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ContactMessage' }
 components:
   schemas:
+    StoreFailure:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
     HealthStatus:
       type: object
       properties:
@@ -33,4 +214,157 @@ components:
           type: string
       required:
         - status
+    LocalText:
+      type: object
+      required: [en, ar]
+      properties:
+        en: { type: string, minLength: 1, maxLength: 3000 }
+        ar: { type: string, minLength: 1, maxLength: 3000 }
+    LocalList:
+      type: object
+      required: [en, ar]
+      properties:
+        en: { type: array, maxItems: 20, items: { type: string, maxLength: 100 } }
+        ar: { type: array, maxItems: 20, items: { type: string, maxLength: 100 } }
+    Notes:
+      type: object
+      required: [top, heart, base]
+      properties:
+        top: { $ref: '#/components/schemas/LocalList' }
+        heart: { $ref: '#/components/schemas/LocalList' }
+        base: { $ref: '#/components/schemas/LocalList' }
+    Variant:
+      type: object
+      required: [size, price, stock]
+      properties:
+        size: { type: string, enum: [50ml, 100ml] }
+        price: { type: number, minimum: 0.001, maximum: 10000 }
+        stock: { type: integer, minimum: 0, maximum: 100000 }
+    ProductInput:
+      type: object
+      required: [id, name, concentration, description, notes, noteHighlights, audience, collections, imageKey, active, variants, version]
+      properties:
+        id: { type: string, pattern: '^[a-z0-9-]{2,60}$' }
+        name: { $ref: '#/components/schemas/LocalText' }
+        concentration: { $ref: '#/components/schemas/LocalText' }
+        description: { $ref: '#/components/schemas/LocalText' }
+        notes: { $ref: '#/components/schemas/Notes' }
+        noteHighlights: { $ref: '#/components/schemas/LocalList' }
+        audience: { $ref: '#/components/schemas/LocalList' }
+        collections: { $ref: '#/components/schemas/LocalList' }
+        badge: { $ref: '#/components/schemas/LocalText' }
+        imageKey: { type: string, enum: [oud, rose, amber, musk, night, bloom] }
+        active: { type: boolean }
+        version: { type: integer, minimum: 0 }
+        variants:
+          type: array
+          minItems: 2
+          maxItems: 2
+          items: { $ref: '#/components/schemas/Variant' }
+    Product:
+      allOf:
+        - $ref: '#/components/schemas/ProductInput'
+    ProfileInput:
+      type: object
+      required: [name, phone, address]
+      properties:
+        name: { type: string, minLength: 2, maxLength: 100 }
+        phone: { type: string, maxLength: 30 }
+        address: { type: string, maxLength: 1000 }
+    Profile:
+      type: object
+      required: [id, email, name, phone, address, role]
+      properties:
+        id: { type: string }
+        email: { type: string }
+        name: { type: string }
+        phone: { type: string }
+        address: { type: string }
+        role: { type: string, enum: [customer, admin] }
+    CartItem:
+      type: object
+      required: [productId, size, quantity]
+      properties:
+        productId: { type: string, pattern: '^[a-z0-9-]{2,60}$' }
+        size: { type: string, enum: [50ml, 100ml] }
+        quantity: { type: integer, minimum: 1, maximum: 99 }
+    OrderInput:
+      type: object
+      required: [requestId, name, phone, address, payment, items]
+      properties:
+        requestId: { type: string, format: uuid }
+        name: { type: string, minLength: 2, maxLength: 100 }
+        phone: { type: string, minLength: 5, maxLength: 30, pattern: '^[+0-9٠-٩۰-۹ ()-]+$' }
+        address: { type: string, minLength: 5, maxLength: 1000 }
+        payment: { type: string, enum: [card, knet, cash] }
+        items:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items: { $ref: '#/components/schemas/CartItem' }
+    OrderReceipt:
+      type: object
+      required: [id, reference, total, currency]
+      properties:
+        id: { type: string }
+        reference: { type: string }
+        total: { type: number }
+        currency: { type: string }
+    OrderItem:
+      type: object
+      required: [productId, name, size, quantity, price]
+      properties:
+        productId: { type: string }
+        name: { $ref: '#/components/schemas/LocalText' }
+        size: { type: string }
+        quantity: { type: integer }
+        price: { type: number }
+    Order:
+      type: object
+      required: [id, reference, name, phone, address, payment, status, total, currency, createdAt, items]
+      properties:
+        id: { type: string }
+        reference: { type: string }
+        name: { type: string }
+        phone: { type: string }
+        address: { type: string }
+        payment: { type: string, enum: [card, knet, cash] }
+        status: { type: string, enum: [pending, processing, shipped, delivered, cancelled] }
+        total: { type: number }
+        currency: { type: string }
+        createdAt: { type: string }
+        items: { type: array, items: { $ref: '#/components/schemas/OrderItem' } }
+    OrderStatusInput:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, enum: [processing, shipped, delivered, cancelled] }
+    ContactInput:
+      type: object
+      required: [requestId, name, email, message]
+      properties:
+        requestId: { type: string, format: uuid }
+        name: { type: string, minLength: 2, maxLength: 100 }
+        email: { type: string, format: email, maxLength: 254 }
+        message: { type: string, minLength: 10, maxLength: 5000 }
+    ContactMessage:
+      type: object
+      required: [id, name, email, message, resolved, createdAt]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        email: { type: string }
+        message: { type: string }
+        resolved: { type: boolean }
+        createdAt: { type: string }
+    MessageStatusInput:
+      type: object
+      required: [resolved]
+      properties:
+        resolved: { type: boolean }
+    SavedResult:
+      type: object
+      required: [id]
+      properties:
+        id: { type: string }
 

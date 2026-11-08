@@ -1,5 +1,3 @@
-import { products as catalog } from '../data/products';
-
 export const messages = {
   en: {
     nav: { home: 'Home', shop: 'Shop', collections: 'Collections', about: 'About', contact: 'Contact', main: 'Main navigation', logo: 'NOIR PERFUMES home' },
@@ -80,27 +78,3 @@ export const messages = {
     },
   },
 } as const;
-
-type ProductCopy = {
-  name: string;
-  concentration: string;
-  description: string;
-  notes: Record<'top' | 'heart' | 'base', string[]>;
-  noteHighlights: string[];
-  badge: string | null;
-};
-export const productMessages = Object.fromEntries(catalog.map((product) => [
-  product.id,
-  {
-    en: {
-      name: product.name.en, concentration: product.concentration.en, description: product.description.en,
-      notes: { top: product.notes.top.en, heart: product.notes.heart.en, base: product.notes.base.en },
-      noteHighlights: product.noteHighlights.en, badge: product.badge?.en ?? null,
-    },
-    ar: {
-      name: product.name.ar, concentration: product.concentration.ar, description: product.description.ar,
-      notes: { top: product.notes.top.ar, heart: product.notes.heart.ar, base: product.notes.base.ar },
-      noteHighlights: product.noteHighlights.ar, badge: product.badge?.ar ?? null,
-    },
-  },
-])) as Record<string, Record<'en' | 'ar', ProductCopy>>;

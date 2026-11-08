@@ -1,4 +1,6 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 pnpm install --frozen-lockfile
-pnpm --filter db push
+pnpm run typecheck:libs
+# NOIR uses externally managed Supabase migrations (supabase/migrations).
+# Do not push the unused Replit database or reseed inventory during a merge.

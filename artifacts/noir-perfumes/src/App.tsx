@@ -6,11 +6,18 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import NotFound from '@/pages/not-found';
 import logo from './assets/noir-logo.webp';
 import lineup from './assets/noir-signature-scents.webp';
-import { getInitialLanguage, getInitialTheme, setPreference } from './i18n/preferences';
-import { messages, productMessages } from './i18n/translations';
-import { Route, Switch, useLocation, Router as WouterRouter } from 'wouter';
+import { messages } from './i18n/translations';
+import { Route, Switch, Redirect, useLocation, Router as WouterRouter } from 'wouter';
+import { useUser } from '@clerk/react';
+import { useGetProfile, usePlaceOrder, useSendContact, getGetCatalogQueryKey, getGetMyOrdersQueryKey } from '@workspace/api-client-react';
+import { SitePreferences, useSitePreferences } from './site-preferences';
+import { CatalogProvider, useCatalog, type StoreProduct } from './catalog-context';
+import { backendMessages } from './i18n/backend';
+import { submissionId, finishSubmission } from './submission';
+import { AuthProvider, AuthPage, AccountEntry } from './auth-shell';
+import { AccountPage, AdminPage } from './portal';
 import { ArrowDown, ArrowRight, Check, Clock3, Gift, Heart, Menu, Moon, Search, ShieldCheck, ShoppingBag, Sun, Truck, X, Minus, Plus, Trash2, Instagram, Facebook, MessageCircle, MapPin, Phone, Mail } from 'lucide-react';
-import { products, formatPrice as formatCurrency } from './data/products';
+import { formatPrice as formatCurrency } from './data/products';
 import { STORE_CONFIG } from './data/config';
 import { CommerceProvider, useCommerce, type PerfumeSize } from './commerce-context';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
@@ -29,14 +36,26 @@ const filters = [
 ] as const;
 
 function Home() {
-  const [theme, setTheme] = useState<'dark' | 'light'>(getInitialTheme);
-  const [language, setLanguage] = useState<'en' | 'ar'>(getInitialLanguage);
+  const { theme, setTheme, language, setLanguage } = useSitePreferences();
+  const { products, loading: catalogLoading, error: catalogError, reload: reloadCatalog } = useCatalog();
+  const { user, isLoaded: authLoaded, isSignedIn } = useUser();
+  const profile = useGetProfile({ query: { enabled: authLoaded && !!isSignedIn, staleTime: 30_000, retry: false } });
+  const orderMutation = usePlaceOrder();
+  const contactMutation = useSendContact();
+  const orderBusy = useRef(false);
+  const contactBusy = useRef(false);
+  const [orderPending, setOrderPending] = useState(false);
+  const [contactPending, setContactPending] = useState(false);
+  const [orderError, setOrderError] = useState<'save' | 'stock' | false>(false);
+  const [contactError, setContactError] = useState(false);
+  const [orderReference, setOrderReference] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const [active, setActive] = useState('home');
   const [filter, setFilter] = useState('all');
   const [sort, setSort] = useState('featured');
-  const [quickView, setQuickView] = useState<(typeof products)[number] | null>(null);
+  const [quickViewId, setQuickViewId] = useState<string | null>(null);
+  const quickView = products.find((p) => p.id === quickViewId) ?? null;
   const [quickSize, setQuickSize] = useState<PerfumeSize>('100ml');
   const [quickQuantity, setQuickQuantity] = useState(1);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -51,27 +70,23 @@ function Home() {
   const [showSkeleton, setShowSkeleton] = useState(true);
   const [revealed, setRevealed] = useState<string[]>([]);
   const productGridRef = useRef<HTMLDivElement>(null);
-  const { cart, favorites, addToCart, changeQuantity, removeFromCart, toggleFavorite, removeFavorite, clearCart } = useCommerce();
+  const { cart, favorites, addToCart, changeQuantity, removeFromCart, toggleFavorite, removeFavorite, deductPurchased } = useCommerce();
   const { toast } = useToast();
   const cartCount = cart.reduce((sum, line) => sum + line.quantity, 0);
   const favoriteCount = favorites.length;
   const rtl = language === 'ar';
   const copy = messages[language];
+  const backend = backendMessages[language];
   const formatPrice = (amount: number) => formatCurrency(amount, language);
   const formatNumber = (amount: number) => new Intl.NumberFormat(rtl ? 'ar-KW' : 'en-KW').format(amount);
   const formatSize = (size: PerfumeSize) => rtl
     ? (size === '50ml' ? '٥٠ مل' : '١٠٠ مل')
     : size;
-  const productCopy = (product: (typeof products)[number]) => productMessages[product.id][language];
-
-  useEffect(() => {
-    document.documentElement.dataset.theme = theme;
-    document.documentElement.lang = language;
-    document.documentElement.dir = rtl ? 'rtl' : 'ltr';
-    document.documentElement.style.colorScheme = theme;
-    setPreference('theme', theme);
-    setPreference('language', language);
-  }, [theme, language, rtl]);
+  const productCopy = (product: StoreProduct) => ({
+    name: product.name[language], concentration: product.concentration[language], description: product.description[language],
+    noteHighlights: product.noteHighlights[language], badge: product.badge?.[language],
+    notes: { top: product.notes.top[language], heart: product.notes.heart[language], base: product.notes.base[language] },
+  });
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -178,7 +193,7 @@ function Home() {
     if (sort === 'low') return [...filtered].sort((a, b) => a.prices['100ml'] - b.prices['100ml']);
     if (sort === 'high') return [...filtered].sort((a, b) => b.prices['100ml'] - a.prices['100ml']);
     return filtered;
-  }, [filter, sort]);
+  }, [filter, sort, products]);
 
   useEffect(() => {
     if (showSkeleton) return;
@@ -211,12 +226,17 @@ function Home() {
     window.setTimeout(() => document.getElementById('products')?.scrollIntoView({ behavior: 'smooth' }), 30);
   };
 
-  const openQuickView = (product: (typeof products)[number]) => {
-    setQuickView(product);
+  const openQuickView = (product: StoreProduct) => {
+    setQuickViewId(product.id);
     setQuickSize('100ml');
     setQuickQuantity(1);
   };
   const addProduct = (id: string, size: PerfumeSize, quantity = 1) => {
+    const product = products.find((p) => p.id === id);
+    const current = cart.find((l) => l.productId === id && l.size === size)?.quantity ?? 0;
+    if (catalogError || !product || current + quantity > product.stock[size]) {
+      toast({ title: backend.stockError, variant: 'destructive' }); return;
+    }
     addToCart(id, size, quantity);
     setFavoritesOpen(false);
     setBadgePulse(true);
@@ -234,19 +254,50 @@ function Home() {
     const product = products.find((item) => item.id === line.productId);
     return sum + (product?.prices[line.size] ?? 0) * line.quantity;
   }, 0);
-  const submitCheckout = (event: FormEvent<HTMLFormElement>) => {
+  const invalidCart = cart.some((l) => {
+    const p = products.find((item) => item.id === l.productId);
+    return !p || l.quantity > p.stock[l.size];
+  });
+  const submitCheckout = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!event.currentTarget.reportValidity()) return;
-    clearCart();
-    setCheckoutOpen(false);
-    setOrderComplete(true);
-    toast({ title: copy.orderConfirmed, description: copy.orderSuccess });
+    if (orderBusy.current || !event.currentTarget.reportValidity() || !cart.length) return;
+    const form = new FormData(event.currentTarget);
+    const purchased = cart.map((l) => ({ ...l }));
+    const owner = user?.id ?? 'guest';
+    const payload = { name: String(form.get('name')).trim(), phone: String(form.get('phone')).trim(), address: String(form.get('address')).trim(), payment: form.get('payment') as 'card' | 'knet' | 'cash', items: purchased };
+    orderBusy.current = true; setOrderPending(true); setOrderError(false);
+    try {
+      const requestId = await submissionId('order', { ...payload, customer: user?.id ?? 'guest' });
+      const receipt = await orderMutation.mutateAsync({ data: { ...payload, requestId } });
+      finishSubmission('order');
+      deductPurchased(purchased, owner);
+      setOrderReference(receipt.reference);
+      setCheckoutOpen(false); setOrderComplete(true);
+      toast({ title: backend.received, description: receipt.reference });
+      void queryClient.invalidateQueries({ queryKey: getGetCatalogQueryKey() });
+      void queryClient.invalidateQueries({ queryKey: getGetMyOrdersQueryKey() });
+    } catch (error) {
+      const code = (error as { data?: { error?: string } } | null)?.data?.error;
+      const changedStock = code === 'OUT_OF_STOCK' || code === 'UNAVAILABLE';
+      setOrderError(changedStock ? 'stock' : 'save');
+      toast({ title: changedStock ? backend.stockError : backend.saveError, variant: 'destructive' });
+      reloadCatalog();
+    } finally { orderBusy.current = false; setOrderPending(false); }
   };
-  const submitContact = (event: FormEvent<HTMLFormElement>) => {
+  const submitContact = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!event.currentTarget.reportValidity()) return;
-    event.currentTarget.reset();
-    setContactSent(true);
+    const form = event.currentTarget;
+    if (contactBusy.current || !form.reportValidity()) return;
+    const fields = new FormData(form);
+    const payload = { name: String(fields.get('name')).trim(), email: String(fields.get('email')).trim(), message: String(fields.get('message')).trim() };
+    contactBusy.current = true; setContactPending(true); setContactSent(false); setContactError(false);
+    try {
+      const requestId = await submissionId('contact', payload);
+      await contactMutation.mutateAsync({ data: { ...payload, requestId } });
+      finishSubmission('contact'); form.reset(); setContactSent(true);
+      toast({ title: backend.messageSent });
+    } catch { setContactError(true); toast({ title: backend.saveError, variant: 'destructive' }); }
+    finally { contactBusy.current = false; setContactPending(false); }
   };
 
   const preferenceControls = (
@@ -289,6 +340,7 @@ function Home() {
           ))}
         </nav>
         <div className="header-actions">
+          <AccountEntry />
           <button className="icon-button action-button" type="button" aria-label={copy.search} onClick={() => { setSearchQuery(''); setSearchOpen(true); }} data-testid="button-search"><Search size={18} strokeWidth={1.5} /></button>
           <button className="icon-button action-button count-action" type="button" aria-label={`${copy.favorites}: ${favoriteCount}`} onClick={() => setFavoritesOpen(true)} data-testid="button-favorites">
             <Heart size={18} strokeWidth={1.5} /><span className="count-badge">{formatNumber(favoriteCount)}</span>
@@ -360,7 +412,7 @@ function Home() {
             </label>
           </div>
           <div className="product-grid" ref={productGridRef} aria-live="polite">
-            {showSkeleton ? Array.from({ length: 6 }, (_, index) => <div className="product-skeleton" key={index}><div /><span /><i /></div>) : visibleProducts.map((product) => (
+            {catalogLoading || showSkeleton ? Array.from({ length: 6 }, (_, index) => <div className="product-skeleton" key={index}><div /><span /><i /></div>) : catalogError ? <p className="store-error" role="alert">{backend.catalogError} <button onClick={reloadCatalog}>{backend.retry}</button></p> : visibleProducts.map((product) => (
               <article className={`product-card${revealed.includes(product.id) ? ' is-revealed' : ''}`} key={product.id} data-product-id={product.id} data-testid={`card-product-${product.id}`} role="group" tabIndex={0} aria-label={`${rtl ? 'عرض' : 'View'} ${productCopy(product).name}`} onClick={() => openQuickView(product)} onKeyDown={(event) => { if (event.target !== event.currentTarget) return; if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openQuickView(product); } }}>
                 <div className="product-image-wrap">
                   <div className="product-image-crop" style={{ '--crop-left': `${product.crop.column * -100}%`, '--crop-top': `${product.crop.row * -100}%`, '--crop-position': product.crop.objectPosition } as CSSProperties}>
@@ -373,12 +425,12 @@ function Home() {
                 <div className="product-info">
                   <div className="product-title-row"><div><h3>{productCopy(product).name}</h3><p>{productCopy(product).concentration}</p></div><span className="product-price">{formatPrice(product.prices['100ml'])}</span></div>
                   <p className="note-highlights">{productCopy(product).noteHighlights.join(' · ')}</p>
-                  <div className="product-buy-row"><span className="size-label">{formatSize('100ml')}</span><button type="button" className="add-button" onClick={(event) => { event.stopPropagation(); addProduct(product.id, '100ml'); }} data-testid={`button-add-${product.id}`}>{copy.add} <span>＋</span></button></div>
+                   <div className="product-buy-row"><span className="size-label">{formatSize('100ml')}</span><button type="button" className="add-button" disabled={product.stock['100ml'] < 1} onClick={(event) => { event.stopPropagation(); addProduct(product.id, '100ml'); }} data-testid={`button-add-${product.id}`}>{product.stock['100ml'] > 0 ? copy.add : backend.unavailable} <span>＋</span></button></div>
                 </div>
               </article>
             ))}
           </div>
-          {!showSkeleton && visibleProducts.length === 0 && <p className="empty-products">{copy.products.none}</p>}
+          {!showSkeleton && !catalogLoading && !catalogError && visibleProducts.length === 0 && <p className="empty-products">{copy.products.none}</p>}
         </section>
         <section id="collections" className="collections-section section-shell scroll-reveal">
           <div className="section-heading collection-heading">
@@ -435,12 +487,13 @@ function Home() {
           </div>
           <div className="footer-form-column">
             <h2>{copy.footer.contact}</h2><p>{copy.footer.contactDescription}</p>
-            <form className="contact-form" onSubmit={submitContact}>
-              <label>{copy.footer.name}<input name="name" autoComplete="name" required minLength={2} /></label>
-              <label>{copy.footer.email}<input name="email" type="email" autoComplete="email" required /></label>
-              <label>{copy.footer.message}<textarea name="message" required minLength={10} rows={3} /></label>
-              <button className="footer-submit" type="submit">{copy.footer.send}<Mail size={15} /></button>
-              {contactSent && <p className="contact-success" role="status">{copy.footer.success}</p>}
+            <form className="contact-form" onSubmit={submitContact} aria-busy={contactPending}>
+              <label>{copy.footer.name}<input disabled={contactPending} name="name" autoComplete="name" required minLength={2} maxLength={100} /></label>
+              <label>{copy.footer.email}<input disabled={contactPending} name="email" type="email" autoComplete="email" required maxLength={254} /></label>
+              <label>{copy.footer.message}<textarea disabled={contactPending} name="message" required minLength={10} maxLength={5000} rows={3} /></label>
+              <button className="footer-submit" type="submit" disabled={contactPending}>{contactPending ? backend.saving : copy.footer.send}<Mail size={15} /></button>
+              {contactSent && <p className="contact-success" role="status">{backend.messageSent}</p>}
+              {contactError && <p className="store-error" role="alert">{backend.saveError}</p>}
             </form>
           </div>
         </div>
@@ -469,7 +522,7 @@ function Home() {
         <p className="drawer-signoff">{copy.mobile.signoff}</p>
       </div>
       {menuOpen && <button className="drawer-scrim" aria-label={copy.mobile.close} onClick={() => setMenuOpen(false)} />}
-      <Dialog open={Boolean(quickView)} onOpenChange={(open) => !open && setQuickView(null)}>
+      <Dialog open={Boolean(quickView)} onOpenChange={(open) => !open && setQuickViewId(null)}>
         {quickView && <DialogContent className="commerce-dialog quick-dialog" dir={rtl ? 'rtl' : 'ltr'}>
           <DialogTitle className="sr-only">{productCopy(quickView).name}</DialogTitle>
           <DialogDescription className="sr-only">{productCopy(quickView).description}</DialogDescription>
@@ -490,7 +543,7 @@ function Home() {
                 <output aria-live="polite">{new Intl.NumberFormat(rtl ? 'ar-KW' : 'en-KW').format(quickQuantity)}</output>
                 <button type="button" aria-label={copy.products.increase} onClick={() => setQuickQuantity((qty) => Math.min(99, qty + 1))}><Plus size={15} /></button>
               </div>
-              <button type="button" className="cta-primary quick-add" onClick={() => { addProduct(quickView.id, quickSize, quickQuantity); setQuickView(null); }}>{copy.add} <span>{formatPrice(quickView.prices[quickSize] * quickQuantity)}</span></button>
+              <button type="button" className="cta-primary quick-add" disabled={catalogError || quickView.stock[quickSize] < quickQuantity} onClick={() => { addProduct(quickView.id, quickSize, quickQuantity); setQuickViewId(null); }}>{quickView.stock[quickSize] >= quickQuantity ? copy.add : backend.unavailable} <span>{formatPrice(quickView.prices[quickSize] * quickQuantity)}</span></button>
             </div>
           </div>
         </DialogContent>}
@@ -512,14 +565,15 @@ function Home() {
           <div className="panel-heading"><div><p className="section-kicker">NOIR / 01</p><DialogTitle>{copy.cart} <span className="panel-count">{cartCount}</span></DialogTitle></div><DialogDescription className="sr-only">{copy.quick.cartDescription}</DialogDescription></div>
           {cart.length === 0 ? <div className="panel-empty-state"><ShoppingBag size={32} /><p>{copy.emptyCart}</p><button type="button" className="text-action" onClick={() => { setCartOpen(false); document.getElementById('products')?.scrollIntoView({ behavior: 'smooth' }); }}>{copy.startShopping} <ArrowRight size={15} /></button></div> :
             <div className="panel-lines">{cart.map((line) => {
-              const product = products.find((item) => item.id === line.productId)!;
+              const product = products.find((item) => item.id === line.productId);
+              if (!product) return <article className="commerce-line unavailable-line" key={`${line.productId}-${line.size}`}><div><h3>{backend.removedProduct}</h3><p>{line.productId} · {formatSize(line.size)}</p></div><button type="button" className="text-action" onClick={() => removeFromCart(line.productId, line.size)}>{copy.remove}</button></article>;
               return <article className="commerce-line" key={`${line.productId}-${line.size}`}>
                 <div className="line-thumb"><div className="product-image-crop" style={{ '--crop-left': `${product.crop.column * -100}%`, '--crop-top': `${product.crop.row * -100}%`, '--crop-position': product.crop.objectPosition } as CSSProperties}><img src={product.image} alt="" /></div></div>
-              <div className="line-detail"><h3>{productCopy(product).name}</h3><p>{formatSize(line.size)} · {formatPrice(product.prices[line.size])}</p><div className="quantity-control compact"><button type="button" aria-label={copy.products.decrease} onClick={() => changeQuantity(line.productId, line.size, -1)}><Minus size={13} /></button><output>{formatNumber(line.quantity)}</output><button type="button" aria-label={copy.products.increase} onClick={() => changeQuantity(line.productId, line.size, 1)}><Plus size={13} /></button></div></div>
+              <div className="line-detail"><h3>{productCopy(product).name}</h3><p>{formatSize(line.size)} · {formatPrice(product.prices[line.size])}</p>{line.quantity > product.stock[line.size] && <p className="store-error">{backend.stockError}</p>}<div className="quantity-control compact"><button type="button" aria-label={copy.products.decrease} onClick={() => changeQuantity(line.productId, line.size, -1)}><Minus size={13} /></button><output>{formatNumber(line.quantity)}</output><button type="button" disabled={line.quantity >= product.stock[line.size]} aria-label={copy.products.increase} onClick={() => changeQuantity(line.productId, line.size, 1)}><Plus size={13} /></button></div></div>
                 <div className="line-total"><strong>{formatPrice(product.prices[line.size] * line.quantity)}</strong><button type="button" aria-label={`${copy.remove} ${productCopy(product).name}`} onClick={() => { removeFromCart(line.productId, line.size); toast({ title: copy.removedFromCart }); }}><Trash2 size={16} /></button></div>
               </article>;
             })}</div>}
-          {cart.length > 0 && <div className="panel-footer"><div className="subtotal-row"><span>{copy.subtotal}</span><strong>{formatPrice(subtotal)}</strong></div><button type="button" className="cta-primary panel-cta" onClick={() => { setCartOpen(false); setCheckoutOpen(true); }}>{copy.checkout}<ArrowRight size={16} /></button></div>}
+          {cart.length > 0 && <div className="panel-footer">{invalidCart && <p role="alert" className="store-error">{backend.reviewBag}</p>}<div className="subtotal-row"><span>{copy.subtotal}</span><strong>{formatPrice(subtotal)}</strong></div><button type="button" disabled={invalidCart || catalogError || catalogLoading} className="cta-primary panel-cta" onClick={() => { setOrderError(false); setCartOpen(false); setCheckoutOpen(true); }}>{copy.checkout}<ArrowRight size={16} /></button></div>}
         </DialogContent>
       </Dialog>
 
@@ -528,25 +582,26 @@ function Home() {
           <div className="panel-heading"><div><p className="section-kicker">NOIR / 02</p><DialogTitle>{copy.favorites} <span className="panel-count">{favoriteCount}</span></DialogTitle></div><DialogDescription className="sr-only">{copy.quick.savedDescription}</DialogDescription></div>
           {!favorites.length ? <div className="panel-empty-state"><Heart size={32} /><p>{copy.emptyFavorites}</p><button type="button" className="text-action" onClick={() => { setFavoritesOpen(false); document.getElementById('products')?.scrollIntoView({ behavior: 'smooth' }); }}>{copy.startShopping} <ArrowRight size={15} /></button></div> :
             <div className="panel-lines">{favorites.map((id) => {
-              const product = products.find((item) => item.id === id)!;
+              const product = products.find((item) => item.id === id);
+              if (!product) return <article className="commerce-line unavailable-line" key={id}><p>{backend.removedProduct}: {id}</p><button type="button" className="text-action" onClick={() => removeFavorite(id)}>{copy.remove}</button></article>;
               return <article className="commerce-line favorite-line" key={id}>
                 <button type="button" className="line-thumb thumb-button" onClick={() => { setFavoritesOpen(false); openQuickView(product); }} aria-label={`${rtl ? 'عرض' : 'View'} ${productCopy(product).name}`}><div className="product-image-crop" style={{ '--crop-left': `${product.crop.column * -100}%`, '--crop-top': `${product.crop.row * -100}%`, '--crop-position': product.crop.objectPosition } as CSSProperties}><img src={product.image} alt="" /></div></button>
-                <div className="line-detail"><h3>{productCopy(product).name}</h3><p>{formatPrice(product.prices['100ml'])} · {formatSize('100ml')}</p><button type="button" className="favorite-add" onClick={() => addProduct(product.id, '100ml')}>{copy.add}</button></div>
+                <div className="line-detail"><h3>{productCopy(product).name}</h3><p>{formatPrice(product.prices['100ml'])} · {formatSize('100ml')}</p><button type="button" className="favorite-add" disabled={!product.stock['100ml']} onClick={() => addProduct(product.id, '100ml')}>{product.stock['100ml'] > 0 ? copy.add : backend.unavailable}</button></div>
                 <button type="button" className="remove-favorite" aria-label={`${copy.remove} ${productCopy(product).name}`} onClick={() => { removeFavorite(id); toast({ title: copy.removedFavorite }); }}><X size={17} /></button>
               </article>;
             })}</div>}
         </DialogContent>
       </Dialog>
 
-      <Dialog open={checkoutOpen} onOpenChange={setCheckoutOpen}>
+      <Dialog open={checkoutOpen} onOpenChange={(open) => { if (!orderPending) setCheckoutOpen(open); }}>
         <DialogContent className="commerce-dialog checkout-dialog" dir={rtl ? 'rtl' : 'ltr'}>
           <p className="section-kicker">NOIR / 03</p><DialogTitle>{copy.quick.deliveryTitle}</DialogTitle>
-          <DialogDescription>{copy.quick.deliveryDescription}</DialogDescription>
-          <form className="checkout-form" onSubmit={submitCheckout}>
-            <label>{copy.name}<input name="name" autoComplete="name" required /></label>
-            <label>{copy.phone}<input name="phone" type="tel" autoComplete="tel" required /></label>
-            <label>{copy.address}<textarea name="address" autoComplete="street-address" rows={2} required /></label>
-            <fieldset><legend>{copy.payment}</legend>
+          <DialogDescription>{backend.delivery}</DialogDescription>
+          <form className="checkout-form" onSubmit={submitCheckout} aria-busy={orderPending}>
+            <label>{copy.name}<input disabled={orderPending} name="name" autoComplete="name" defaultValue={profile.data?.name} required minLength={2} maxLength={100} /></label>
+            <label>{copy.phone}<input disabled={orderPending} name="phone" type="tel" autoComplete="tel" defaultValue={profile.data?.phone} required minLength={5} maxLength={30} /></label>
+            <label>{copy.address}<textarea disabled={orderPending} name="address" autoComplete="street-address" defaultValue={profile.data?.address} rows={2} required minLength={5} maxLength={1000} /></label>
+            <fieldset disabled={orderPending}><legend>{copy.payment}</legend>
               {[
                 { value: 'card', key: 'card' },
                 { value: 'knet', key: 'knet' },
@@ -554,24 +609,35 @@ function Home() {
               ].map((method, index) => <label className="payment-option" key={method.value}><input type="radio" name="payment" value={method.value} defaultChecked={index === 0} />{copy.paymentOptions[method.key as 'card' | 'knet' | 'cash']}</label>)}
             </fieldset>
             <div className="subtotal-row checkout-total"><span>{copy.subtotal}</span><strong>{formatPrice(subtotal)}</strong></div>
-            <button type="submit" className="cta-primary panel-cta">{copy.submitOrder}<Check size={16} /></button>
+            <p className="payment-notice">{backend.paymentNotice}</p>
+            {orderError && <p className="store-error" role="alert">{orderError === 'stock' ? backend.stockError : backend.saveError}</p>}
+            <button type="submit" disabled={orderPending || !cart.length} className="cta-primary panel-cta">{orderPending ? backend.saving : copy.submitOrder}<Check size={16} /></button>
           </form>
         </DialogContent>
       </Dialog>
       <Dialog open={orderComplete} onOpenChange={setOrderComplete}>
         <DialogContent className="commerce-dialog confirmation-dialog" dir={rtl ? 'rtl' : 'ltr'}>
-          <span className="confirmation-mark"><Check size={25} /></span><p className="section-kicker">NOIR / 04</p><DialogTitle>{copy.quick.confirmation}</DialogTitle><DialogDescription>{copy.orderSuccess}</DialogDescription><button type="button" className="cta-primary panel-cta" onClick={() => setOrderComplete(false)}>{copy.quick.continue}</button>
+          <span className="confirmation-mark"><Check size={25} /></span><p className="section-kicker">NOIR / 04</p><DialogTitle>{backend.received}</DialogTitle><DialogDescription>{backend.paymentNotice}</DialogDescription><p>{backend.reference}: <strong dir="ltr">{orderReference}</strong></p><button type="button" className="cta-primary panel-cta" onClick={() => setOrderComplete(false)}>{copy.quick.continue}</button>
         </DialogContent>
       </Dialog>
     </div>
   );
 }
 
+function Landing() {
+  const { isLoaded, isSignedIn } = useUser();
+  return isLoaded && isSignedIn ? <Redirect to="/account" /> : <Home />;
+}
 function Router() {
   return (
     <RoutedErrorBoundary>
       <Switch>
-        <Route path="/" component={Home} />
+        <Route path="/" component={Landing} />
+        <Route path="/shop" component={Home} />
+        <Route path="/account" component={AccountPage} />
+        <Route path="/admin" component={AdminPage} />
+        <Route path="/sign-in/*?">{() => <AuthPage mode="sign-in" />}</Route>
+        <Route path="/sign-up/*?">{() => <AuthPage mode="sign-up" />}</Route>
         <Route component={NotFound} />
       </Switch>
     </RoutedErrorBoundary>
@@ -587,11 +653,13 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <CommerceProvider>
+        <SitePreferences>
           <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}>
-            <Router />
+            <AuthProvider>
+              <CatalogProvider><CommerceProvider><Router /></CommerceProvider></CatalogProvider>
+            </AuthProvider>
           </WouterRouter>
-        </CommerceProvider>
+        </SitePreferences>
         <Toaster />
       </TooltipProvider>
     </QueryClientProvider>
