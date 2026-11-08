@@ -62,11 +62,13 @@ try {
   phase = 'create and sign in two users';
   const first = await createSyntheticUser(1);
   const second = await createSyntheticUser(2);
+  const verifiedSession = await first.client.auth.getUser(first.token);
+  assert.equal(verifiedSession.error, null, `Supabase token verification failed (${safeAuthError(verifiedSession.error)})`);
   phase = 'verified profile linking';
   const firstProfile = await api(first.token, '/profile');
   const secondProfile = await api(second.token, '/profile');
-  assert.equal(firstProfile.status, 200, 'First verified account reads its own profile');
-  assert.equal(secondProfile.status, 200, 'Second verified account reads its own profile');
+  assert.equal(firstProfile.status, 200, `First verified account reads its own profile (${firstProfile.data?.error || firstProfile.data?.code || 'no error code'})`);
+  assert.equal(secondProfile.status, 200, `Second verified account reads its own profile (${secondProfile.data?.error || secondProfile.data?.code || 'no error code'})`);
   profiles.push(firstProfile.data.id, secondProfile.data.id);
   assert.notEqual(firstProfile.data.id, secondProfile.data.id, 'Each auth user has a separate profile');
 
