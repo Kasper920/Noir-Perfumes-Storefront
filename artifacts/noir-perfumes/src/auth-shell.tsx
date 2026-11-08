@@ -111,6 +111,9 @@ export function AuthPage({ mode }: { mode: AuthPageMode }) {
   const signUpView = formMode === 'sign-up';
   const resetView = formMode === 'reset-password';
   const forgotView = formMode === 'forgot-password';
+  const authFailureText = (failure: { code?: string; message?: string; status?: number }, fallback: string) =>
+    failure.code === 'invalid_api_key' || failure.message === 'Invalid API key' || (failure.status ?? 0) >= 500
+      ? t.serviceError : fallback;
 
   useEffect(() => setFormMode(mode), [mode]);
   useEffect(() => {
@@ -130,7 +133,7 @@ export function AuthPage({ mode }: { mode: AuthPageMode }) {
     try {
       if (signInView) {
         const { error: authError } = await client.auth.signInWithPassword({ email: emailValue, password });
-        if (authError) setError(t.signInError);
+        if (authError) setError(authFailureText(authError, t.signInError));
         else setLocation('/account');
       } else if (signUpView) {
         if (name.trim().length < 2) { setError(t.nameError); return; }
@@ -143,19 +146,19 @@ export function AuthPage({ mode }: { mode: AuthPageMode }) {
             emailRedirectTo: redirectTo('/account'),
           },
         });
-        if (authError) setError(t.signUpError);
+        if (authError) setError(authFailureText(authError, t.signUpError));
         else if (data.session) setLocation('/account');
         else setMessage(t.verifyEmail);
       } else if (forgotView) {
         const { error: authError } = await client.auth.resetPasswordForEmail(emailValue, {
           redirectTo: redirectTo('/reset-password'),
         });
-        if (authError) setError(t.resetError);
+        if (authError) setError(authFailureText(authError, t.resetError));
         else setMessage(t.resetSent);
       } else {
         if (password.length < 8) { setError(t.minPasswordError); return; }
         const { error: authError } = await client.auth.updateUser({ password });
-        if (authError) setError(t.resetError);
+        if (authError) setError(authFailureText(authError, t.resetError));
         else {
           await client.auth.signOut({ scope: 'local' });
           setFormMode('sign-in');
