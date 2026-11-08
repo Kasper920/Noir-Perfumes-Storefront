@@ -1,37 +1,54 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { clerkClient } from '@clerk/express';
 import { createClient } from '@supabase/supabase-js';
 
-// Development-only API verification. Never use a real owner's identity.
-assert.ok(process.env.CLERK_SECRET_KEY?.startsWith('sk_test_'), 'Use development Clerk only');
-const db = createClient(new URL(process.env.SUPABASE_URL).origin, process.env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
+assert.equal(process.env.NOIR_ALLOW_SYNTHETIC_AUTH_TESTS, '1', 'Set NOIR_ALLOW_SYNTHETIC_AUTH_TESTS=1 to create temporary Supabase Auth users');
+const url = new URL(process.env.SUPABASE_URL).origin;
+const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const anonKey = process.env.SUPABASE_ANON_KEY;
+assert.ok(serviceKey && anonKey, 'Supabase server configuration is required');
+const db = createClient(url, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
+const auth = createClient(url, anonKey, { auth: { persistSession: false, autoRefreshToken: false } });
 const suffix = randomUUID().slice(0, 8);
+const email = `noir-admin-test-${suffix}@example.com`;
+const password = `${randomUUID()}Aa1!`;
 const productId = `admin-verification-${suffix}`;
 const messageId = randomUUID();
+const apiBase = process.env.NOIR_API_BASE_URL || 'http://localhost:80/api';
+let user;
+let profileId;
+let token;
 let uploadedImagePath;
 const imageBucket = process.env.NOIR_PRODUCT_IMAGE_BUCKET || 'noir-product-images';
-let user;
-let token;
 const call = async (path, method = 'GET', body) => {
-  const response = await fetch(`http://localhost:80/api${path}`, {
+  const response = await fetch(`${apiBase}${path}`, {
     method, headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
   return { status: response.status, data: await response.json() };
 };
-const check = (r) => { if (r.error) throw new Error('Synthetic database setup/cleanup failed'); return r.data; };
+const check = (result) => {
+  if (result.error) throw new Error('Synthetic database setup/cleanup failed');
+  return result.data;
+};
 
 try {
-  user = await clerkClient.users.createUser({
-    emailAddress: [`noir-admin-test-${suffix}@example.com`],
-    firstName: 'Synthetic', lastName: 'API verifier', skipPasswordRequirement: true,
+  const createdUser = await db.auth.admin.createUser({
+    email, password, email_confirm: true, user_metadata: { full_name: 'Synthetic API verifier' },
   });
-  const session = await clerkClient.sessions.createSession({ userId: user.id });
-  token = (await clerkClient.sessions.getToken(session.id)).jwt;
-  assert.equal((await call('/profile')).status, 200, 'Verified synthetic session creates customer');
+  if (createdUser.error || !createdUser.data.user) throw new Error('Synthetic Supabase Auth setup failed');
+  user = createdUser.data.user;
+  const signedIn = await auth.auth.signInWithPassword({ email, password });
+  if (signedIn.error || !signedIn.data.session) throw new Error('Synthetic Supabase Auth sign-in failed');
+  token = signedIn.data.session.access_token;
+
+  const profile = await call('/profile');
+  assert.equal(profile.status, 200, 'Verified Supabase session creates and reads its own customer profile');
+  profileId = profile.data.id;
+  assert.equal(profile.data.email, email);
   assert.equal((await call('/admin/products')).status, 403, 'Customer cannot list management catalog');
-  check(await db.from('noir_profiles').update({ role: 'admin' }).eq('id', user.id));
+  check(await db.from('noir_profiles').update({ role: 'admin' }).eq('auth_user_id', user.id));
+
   const products = await call('/admin/products');
   assert.equal(products.status, 200);
   const draft = {
@@ -43,7 +60,7 @@ try {
   const created = await call('/admin/products', 'POST', draft);
   assert.equal(created.status, 200, 'Admin creates localized product and variants');
   const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL/nwAAAABJRU5ErkJggg==', 'base64');
-  const imageResponse = await fetch(`http://localhost:80/api/admin/products/${productId}/image/${created.data.version}`, {
+  const imageResponse = await fetch(`${apiBase}/admin/products/${productId}/image/${created.data.version}`, {
     method: 'PUT',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/octet-stream' },
     body: png,
@@ -65,11 +82,11 @@ try {
   });
   assert.equal(order.status, 201);
   assert.equal(order.data.total, 3.127);
-  const oid = order.data.id;
-  assert.equal((await call(`/admin/orders/${oid}`, 'PATCH', { status: 'processing' })).status, 200);
-  assert.equal((await call(`/admin/orders/${oid}`, 'PATCH', { status: 'cancelled' })).status, 200);
-  assert.equal((await call(`/admin/orders/${oid}`, 'PATCH', { status: 'cancelled' })).status, 200);
-  assert.equal((await call(`/admin/orders/${oid}`, 'PATCH', { status: 'shipped' })).status, 409);
+  const orderId = order.data.id;
+  assert.equal((await call(`/admin/orders/${orderId}`, 'PATCH', { status: 'processing' })).status, 200);
+  assert.equal((await call(`/admin/orders/${orderId}`, 'PATCH', { status: 'cancelled' })).status, 200);
+  assert.equal((await call(`/admin/orders/${orderId}`, 'PATCH', { status: 'cancelled' })).status, 200);
+  assert.equal((await call(`/admin/orders/${orderId}`, 'PATCH', { status: 'shipped' })).status, 409);
   const current = (await call('/admin/products')).data.find((p) => p.id === productId);
   assert.equal(current.variants.find((v) => v.size === '50ml').stock, 3, 'Cancel restores exactly once');
   assert.equal((await call('/admin/products', 'POST', { ...created.data, active: false })).status, 409, 'Stale edit cannot overwrite checkout stock');
@@ -79,23 +96,29 @@ try {
   assert.equal((await call('/admin/products', 'POST', { ...archived.data, active: true })).status, 200);
   assert.equal((await call('/catalog')).data.some((p) => p.id === productId), true);
   assert.equal((await call('/contact', 'POST', {
-    requestId: messageId, name: 'Synthetic verifier', email: `noir-admin-test-${suffix}@example.com`,
+    requestId: messageId, name: 'Synthetic verifier', email,
     message: 'Synthetic verification message, please ignore.',
   })).status, 201);
   assert.equal((await call('/admin/messages')).data.some((m) => m.id === messageId && !m.resolved), true);
   assert.equal((await call(`/admin/messages/${messageId}`, 'PATCH', { resolved: true })).data.resolved, true);
   assert.equal((await call(`/admin/messages/${messageId}`, 'PATCH', { resolved: false })).data.resolved, false);
-  check(await db.from('noir_profiles').update({ role: 'customer' }).eq('id', user.id));
+  check(await db.from('noir_profiles').update({ role: 'customer' }).eq('auth_user_id', user.id));
   assert.equal((await call('/profile', 'PATCH', { name: 'Synthetic verifier', phone: '', address: '', role: 'admin' })).data.role, 'customer', 'Profile cannot self-escalate');
   assert.equal((await call('/admin/orders')).status, 403, 'Role revocation is immediate');
   assert.equal((await call('/admin/products', 'POST', draft)).status, 403);
-  console.log('PASS: authenticated admin create/edit/archive/restore, uploaded product image in Supabase Storage with a saved public database reference, real stock prices, legal fulfillment/cancellation, message resolve/reopen, version conflicts, customer denial, role revocation and self-escalation protection.');
+  const signedOut = await auth.auth.signOut({ scope: 'local' });
+  assert.equal(signedOut.error, null, 'Supabase client signs out cleanly');
+  console.log('PASS: Supabase session verification, profile linking, role checks, admin catalog and image operations, order lifecycle, contact messages, self-escalation protection, and sign-out.');
 } catch (error) {
   console.error(error instanceof assert.AssertionError ? error.message : 'Admin verification failed; no secret or session details logged.');
   process.exitCode = 1;
 } finally {
+  if (profileId) {
+    check(await db.from('noir_orders').delete().eq('customer_id', profileId));
+    check(await db.from('noir_profiles').update({ role: 'customer' }).eq('id', profileId));
+    check(await db.from('noir_profiles').delete().eq('id', profileId));
+  }
   check(await db.from('noir_messages').delete().eq('id', messageId));
-  if (user) check(await db.from('noir_orders').delete().eq('customer_id', user.id));
   check(await db.from('noir_variants').delete().eq('product_id', productId));
   check(await db.from('noir_products').delete().eq('id', productId));
   if (uploadedImagePath) {
@@ -103,7 +126,7 @@ try {
     if (error) throw new Error('Synthetic test image cleanup failed.');
   }
   if (user) {
-    check(await db.from('noir_profiles').delete().eq('id', user.id));
-    await clerkClient.users.deleteUser(user.id);
+    const { error } = await db.auth.admin.deleteUser(user.id);
+    if (error) throw new Error('Synthetic Auth cleanup failed.');
   }
 }

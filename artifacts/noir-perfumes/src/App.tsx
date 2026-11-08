@@ -8,13 +8,12 @@ import logo from './assets/noir-logo.webp';
 import lineup from './assets/noir-signature-scents.webp';
 import { messages } from './i18n/translations';
 import { Route, Switch, Redirect, useLocation, Router as WouterRouter } from 'wouter';
-import { useUser } from '@clerk/react';
 import { useGetProfile, usePlaceOrder, useSendContact, getGetCatalogQueryKey, getGetMyOrdersQueryKey } from '@workspace/api-client-react';
 import { SitePreferences, useSitePreferences } from './site-preferences';
 import { CatalogProvider, useCatalog, type StoreProduct } from './catalog-context';
 import { backendMessages } from './i18n/backend';
 import { submissionId, finishSubmission } from './submission';
-import { AuthProvider, AuthPage, AccountEntry } from './auth-shell';
+import { AuthProvider, AuthPage, AccountEntry, useAuth } from './auth-shell';
 import { AccountPage, AdminPage } from './portal';
 import { ArrowDown, ArrowRight, Check, Clock3, Gift, Heart, Menu, Moon, Search, ShieldCheck, ShoppingBag, Sun, Truck, X, Minus, Plus, Trash2, Instagram, Facebook, MessageCircle, MapPin, Phone, Mail } from 'lucide-react';
 import { formatPrice as formatCurrency } from './data/products';
@@ -38,7 +37,8 @@ const filters = [
 function Home() {
   const { theme, setTheme, language, setLanguage } = useSitePreferences();
   const { products, loading: catalogLoading, error: catalogError, reload: reloadCatalog } = useCatalog();
-  const { user, isLoaded: authLoaded, isSignedIn } = useUser();
+  const { user, isLoaded: authLoaded } = useAuth();
+  const isSignedIn = Boolean(user);
   const profile = useGetProfile({ query: { enabled: authLoaded && !!isSignedIn, staleTime: 30_000, retry: false } });
   const orderMutation = usePlaceOrder();
   const contactMutation = useSendContact();
@@ -70,7 +70,7 @@ function Home() {
   const [showSkeleton, setShowSkeleton] = useState(true);
   const [revealed, setRevealed] = useState<string[]>([]);
   const productGridRef = useRef<HTMLDivElement>(null);
-  const { cart, favorites, addToCart, changeQuantity, removeFromCart, toggleFavorite, removeFavorite, deductPurchased } = useCommerce();
+  const { cart, favorites, favoritesReady, favoriteSyncError, clearFavoriteSyncError, addToCart, changeQuantity, removeFromCart, toggleFavorite, removeFavorite, deductPurchased } = useCommerce();
   const { toast } = useToast();
   const cartCount = cart.reduce((sum, line) => sum + line.quantity, 0);
   const favoriteCount = favorites.length;
@@ -87,6 +87,12 @@ function Home() {
     noteHighlights: product.noteHighlights[language], badge: product.badge?.[language],
     notes: { top: product.notes.top[language], heart: product.notes.heart[language], base: product.notes.base[language] },
   });
+
+  useEffect(() => {
+    if (!favoriteSyncError) return;
+    toast({ title: backend.saveError });
+    clearFavoriteSyncError();
+  }, [favoriteSyncError, clearFavoriteSyncError, toast, backend.saveError]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -419,7 +425,7 @@ function Home() {
                     <img src={product.image} alt={`${productCopy(product).name} ${rtl ? 'زجاجة عطر' : 'perfume bottle'}`} loading="lazy" />
                   </div>
                   {productCopy(product).badge && <span className="product-badge">{productCopy(product).badge}</span>}
-                  <button className={`favorite-toggle${favorites.includes(product.id) ? ' is-favorite heart-pop' : ''}`} type="button" aria-label={favorites.includes(product.id) ? copy.removeFavorite : copy.addFavorite} aria-pressed={favorites.includes(product.id)} onClick={(event) => { event.stopPropagation(); toggleFavorite(product.id); toast({ title: favorites.includes(product.id) ? copy.removedFavorite : copy.addedFavorite }); }} data-testid={`button-favorite-${product.id}`}><Heart size={18} strokeWidth={1.4} fill={favorites.includes(product.id) ? 'currentColor' : 'none'} /></button>
+                  <button className={`favorite-toggle${favorites.includes(product.id) ? ' is-favorite heart-pop' : ''}`} type="button" disabled={!favoritesReady} aria-label={favorites.includes(product.id) ? copy.removeFavorite : copy.addFavorite} aria-pressed={favorites.includes(product.id)} onClick={(event) => { event.stopPropagation(); const removing = favorites.includes(product.id); void toggleFavorite(product.id).then((saved) => toast({ title: saved ? (removing ? copy.removedFavorite : copy.addedFavorite) : backend.saveError })); }} data-testid={`button-favorite-${product.id}`}><Heart size={18} strokeWidth={1.4} fill={favorites.includes(product.id) ? 'currentColor' : 'none'} /></button>
                   <button className="quick-view" type="button" onClick={(event) => { event.stopPropagation(); openQuickView(product); }} data-testid={`button-quick-view-${product.id}`}>{copy.products.quickView} <ArrowRight size={14} /></button>
                 </div>
                 <div className="product-info">
@@ -515,6 +521,7 @@ function Home() {
             </a>
           ))}
         </nav>
+        <AccountEntry placement="drawer" />
         <div className="drawer-preferences">
           <span>{copy.mobile.preferences}</span>
           {preferenceControls}
@@ -583,11 +590,11 @@ function Home() {
           {!favorites.length ? <div className="panel-empty-state"><Heart size={32} /><p>{copy.emptyFavorites}</p><button type="button" className="text-action" onClick={() => { setFavoritesOpen(false); document.getElementById('products')?.scrollIntoView({ behavior: 'smooth' }); }}>{copy.startShopping} <ArrowRight size={15} /></button></div> :
             <div className="panel-lines">{favorites.map((id) => {
               const product = products.find((item) => item.id === id);
-              if (!product) return <article className="commerce-line unavailable-line" key={id}><p>{backend.removedProduct}: {id}</p><button type="button" className="text-action" onClick={() => removeFavorite(id)}>{copy.remove}</button></article>;
+              if (!product) return <article className="commerce-line unavailable-line" key={id}><p>{backend.removedProduct}: {id}</p><button type="button" className="text-action" disabled={!favoritesReady} onClick={() => { void removeFavorite(id).then((saved) => toast({ title: saved ? copy.removedFavorite : backend.saveError })); }}>{copy.remove}</button></article>;
               return <article className="commerce-line favorite-line" key={id}>
                 <button type="button" className="line-thumb thumb-button" onClick={() => { setFavoritesOpen(false); openQuickView(product); }} aria-label={`${rtl ? 'عرض' : 'View'} ${productCopy(product).name}`}><div className="product-image-crop" style={{ '--crop-left': `${product.crop.column * -100}%`, '--crop-top': `${product.crop.row * -100}%`, '--crop-position': product.crop.objectPosition } as CSSProperties}><img src={product.image} alt="" /></div></button>
                 <div className="line-detail"><h3>{productCopy(product).name}</h3><p>{formatPrice(product.prices['100ml'])} · {formatSize('100ml')}</p><button type="button" className="favorite-add" disabled={!product.stock['100ml']} onClick={() => addProduct(product.id, '100ml')}>{product.stock['100ml'] > 0 ? copy.add : backend.unavailable}</button></div>
-                <button type="button" className="remove-favorite" aria-label={`${copy.remove} ${productCopy(product).name}`} onClick={() => { removeFavorite(id); toast({ title: copy.removedFavorite }); }}><X size={17} /></button>
+                <button type="button" className="remove-favorite" disabled={!favoritesReady} aria-label={`${copy.remove} ${productCopy(product).name}`} onClick={() => { void removeFavorite(id).then((saved) => toast({ title: saved ? copy.removedFavorite : backend.saveError })); }}><X size={17} /></button>
               </article>;
             })}</div>}
         </DialogContent>
@@ -625,8 +632,8 @@ function Home() {
 }
 
 function Landing() {
-  const { isLoaded, isSignedIn } = useUser();
-  return isLoaded && isSignedIn ? <Redirect to="/account" /> : <Home />;
+  const { isLoaded, user } = useAuth();
+  return isLoaded && user ? <Redirect to="/account" /> : <Home />;
 }
 function Router() {
   return (
@@ -638,6 +645,7 @@ function Router() {
         <Route path="/admin" component={AdminPage} />
         <Route path="/sign-in/*?">{() => <AuthPage mode="sign-in" />}</Route>
         <Route path="/sign-up/*?">{() => <AuthPage mode="sign-up" />}</Route>
+        <Route path="/reset-password">{() => <AuthPage mode="reset-password" />}</Route>
         <Route component={NotFound} />
       </Switch>
     </RoutedErrorBoundary>

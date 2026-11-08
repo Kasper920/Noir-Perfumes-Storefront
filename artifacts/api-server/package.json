@@ -7,11 +7,12 @@
     "dev": "export NODE_ENV=development && pnpm run build && pnpm run start",
     "build": "node ./build.mjs",
     "start": "node --enable-source-maps ./dist/index.mjs",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "verify:store": "node scripts/verify-store.mjs",
+    "verify:admin": "node scripts/verify-admin.mjs",
+    "verify:supabase-auth": "node scripts/verify-supabase-auth.mjs"
   },
   "dependencies": {
-    "@clerk/express": "^2.1.88",
-    "@clerk/shared": "^4.44.1",
     "@supabase/supabase-js": "^2.119.0",
     "@workspace/api-zod": "workspace:*",
     "@workspace/db": "workspace:*",

@@ -1,5 +1,5 @@
 @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700&family=Cormorant+Garamond:wght@400;500;600&family=DM+Sans:wght@400;500;600;700&display=swap');
-@layer theme, base, clerk, components, utilities;
+@layer theme, base, components, utilities;
 @import 'tailwindcss';
 @import 'tw-animate-css';
 @plugin "@tailwindcss/typography";
@@ -273,8 +273,9 @@ button:focus-visible, a:focus-visible { outline: 1px solid var(--color-gold); ou
   .brand-link { width: 104px; height: 56px; }
   .desktop-nav, .desktop-preferences { display: none; }
   .header-actions { gap: 4px; }
-  .action-button { width: 32px; }
-  .mobile-menu-trigger { display: inline-grid; width: 38px; margin-inline-start: 4px; }
+  .action-button { width: 44px; height: 44px; }
+  .header-account { display: none; }
+  .mobile-menu-trigger { display: inline-grid; width: 44px; height: 44px; margin-inline-start: 0; }
   .hero-image { background-position: 59% center; }
   .hero-shade { background: linear-gradient(90deg, rgba(10, 9, 8, .9), rgba(10, 9, 8, .62) 52%, rgba(10, 9, 8, .18)), linear-gradient(0deg, rgba(10, 9, 8, .56), transparent 43%, rgba(10, 9, 8, .12)); }
   .gold-halo { top: 20%; left: 22%; width: 80vw; height: 84vw; }
@@ -298,6 +299,8 @@ button:focus-visible, a:focus-visible { outline: 1px solid var(--color-gold); ou
     width: min(88vw, 440px);
     flex-direction: column;
     padding: 26px 28px 31px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
     background: #171512;
     color: #f5f0e8;
     transform: translateX(102%);
@@ -323,7 +326,7 @@ button:focus-visible, a:focus-visible { outline: 1px solid var(--color-gold); ou
 @media (max-width: 430px) {
   .site-header { padding: 0 16px; }
   .header-actions { gap: 0; }
-  .action-button { width: 29px; }
+  .brand-link { width: 88px; }
   .count-badge { right: -1px; }
   .hero-copy { margin-inline: 22px; }
   [dir='rtl'] .hero-copy { margin-inline: 22px; }

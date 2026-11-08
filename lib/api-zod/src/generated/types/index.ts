@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export * from './authConfig';
 export * from './cartItem';
 export * from './cartItemSize';
 export * from './contactInput';

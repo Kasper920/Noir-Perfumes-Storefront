@@ -9,6 +9,19 @@ import * as zod from 'zod';
 
 
 /**
+ * @summary Public Supabase Auth client configuration
+ */
+export const getAuthConfigResponseAnonKeyMax = 2048;
+
+
+
+export const GetAuthConfigResponse = zod.object({
+  "supabaseUrl": zod.string().url(),
+  "anonKey": zod.string().min(1).max(getAuthConfigResponseAnonKeyMax)
+})
+
+
+/**
  * Returns server health status
  * @summary Health check
  */
@@ -868,3 +881,4 @@ export const UpdateAdminMessageResponse = zod.object({
   "resolved": zod.boolean(),
   "createdAt": zod.string()
 })
+

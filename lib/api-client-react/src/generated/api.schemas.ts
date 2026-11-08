@@ -306,3 +306,12 @@ export interface MessageStatusInput {
 export interface SavedResult {
   id: string;
 }
+
+export interface AuthConfig {
+  supabaseUrl: string;
+  /**
+     * @minLength 1
+     * @maxLength 2048
+     */
+  anonKey: string;
+}

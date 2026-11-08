@@ -1,8 +1,5 @@
 import express, { type Express, type ErrorRequestHandler } from "express";
 import cookieParser from 'cookie-parser';
-import { clerkMiddleware } from '@clerk/express';
-import { publishableKeyFromHost } from '@clerk/shared/keys';
-import { CLERK_PROXY_PATH, clerkProxyMiddleware, getClerkProxyHost } from './middlewares/clerkProxyMiddleware';
 import { StoreError } from './lib/supabase';
 import pinoHttp from "pino-http";
 import router from "./routes";
@@ -30,18 +27,16 @@ app.use(
     },
   }),
 );
-app.use(CLERK_PROXY_PATH, clerkProxyMiddleware());
 app.use(express.json({ limit: '64kb' }));
 app.use(express.urlencoded({ extended: false, limit: '64kb' }));
 if (!process.env.SESSION_SECRET) throw new Error('Missing SESSION_SECRET');
 app.use(cookieParser(process.env.SESSION_SECRET));
-app.use(clerkMiddleware((req) => ({
-  publishableKey: publishableKeyFromHost(getClerkProxyHost(req) ?? '', process.env.CLERK_PUBLISHABLE_KEY),
-})));
 app.use((req, res, next) => {
   if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
     const origin = req.get('origin');
-    const host = getClerkProxyHost(req);
+    const forwardedHost = req.headers['x-forwarded-host'];
+    const host = (Array.isArray(forwardedHost) ? forwardedHost[0] : forwardedHost)?.split(',')[0]?.trim()
+      || req.headers.host?.trim();
     if (req.get('sec-fetch-site') === 'cross-site' || (origin && new URL(origin).host !== host)) {
       res.status(403).json({ error: 'ORIGIN_REJECTED' }); return;
     }

@@ -24,6 +24,16 @@ x-store-errors: &storeErrors
   '429': *failure
   '503': *failure
 paths:
+  /auth/config:
+    get:
+      operationId: getAuthConfig
+      summary: Public Supabase Auth client configuration
+      responses:
+        "200":
+          description: Public URL and anon key for the Supabase client
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthConfig' }
   /healthz:
     get:
       operationId: healthCheck
@@ -404,4 +414,10 @@ components:
       required: [id]
       properties:
         id: { type: string }
+    AuthConfig:
+      type: object
+      required: [supabaseUrl, anonKey]
+      properties:
+        supabaseUrl: { type: string, format: uri }
+        anonKey: { type: string, minLength: 1, maxLength: 2048 }
 

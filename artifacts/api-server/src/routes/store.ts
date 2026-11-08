@@ -2,14 +2,14 @@ import { Router, raw, type IRouter } from 'express';
 import { createHash, randomUUID } from 'node:crypto';
 import { rateLimit } from 'express-rate-limit';
 import {
-  GetCatalogResponse, GetProfileResponse, UpdateProfileBody, UpdateProfileResponse,
+  GetAuthConfigResponse, GetCatalogResponse, GetProfileResponse, UpdateProfileBody, UpdateProfileResponse,
   PlaceOrderBody, PlaceOrderResponse, GetMyOrdersResponse, GetMyOrderParams, GetMyOrderResponse,
   SendContactBody, SendContactResponse, GetAdminProductsResponse, SaveAdminProductBody, SaveAdminProductResponse,
   GetAdminOrdersResponse, UpdateAdminOrderParams, UpdateAdminOrderBody, UpdateAdminOrderResponse,
   GetAdminMessagesResponse, UpdateAdminMessageParams, UpdateAdminMessageBody, UpdateAdminMessageResponse,
   UploadAdminProductImageParams, UploadAdminProductImageResponse,
 } from '@workspace/api-zod';
-import { supabase, checkDb, StoreError, PRODUCT_IMAGE_BUCKET } from '../lib/supabase';
+import { supabase, checkDb, StoreError, PRODUCT_IMAGE_BUCKET, SUPABASE_URL, SUPABASE_ANON_KEY } from '../lib/supabase';
 import { catalog, oneOrder, orderView, publicProfile, messageView } from '../lib/store';
 import { customer, requireCustomer, requireAdmin } from '../middlewares/store-auth';
 
@@ -26,6 +26,9 @@ router.use((req, res, next) => {
   }
   next();
 });
+router.get('/auth/config', (_req, res): void => {
+  res.json(GetAuthConfigResponse.parse({ supabaseUrl: SUPABASE_URL, anonKey: SUPABASE_ANON_KEY }));
+});
 router.get('/catalog', async (_req, res): Promise<void> => {
   res.json(GetCatalogResponse.parse(await catalog()));
 });
@@ -37,8 +40,11 @@ router.patch('/profile', publicWrites, requireCustomer, async (req, res): Promis
   if (!parsed.success) throw new StoreError('INVALID_INPUT', 400);
   const fields = Object.fromEntries(Object.entries(parsed.data).map(([k,v]) => [k,v.trim()]));
   if (fields.name!.length < 2) throw new StoreError('INVALID_INPUT', 400);
-  const { data, error } = await supabase.from('noir_profiles').update(fields).eq('id', res.locals.profile!.id).select('*').single();
+  const { data, error } = await res.locals.userDb!.from('noir_profiles').update(fields)
+    .eq('auth_user_id', res.locals.authUserId!)
+    .select('id,email,name,phone,address,role').single();
   checkDb(error);
+  if (!data) throw new StoreError('PROFILE_NOT_FOUND', 404);
   res.json(UpdateProfileResponse.parse(publicProfile(data)));
 });
 router.post('/orders', publicWrites, async (req, res): Promise<void> => {
@@ -46,7 +52,7 @@ router.post('/orders', publicWrites, async (req, res): Promise<void> => {
   if (!parsed.success) throw new StoreError('INVALID_INPUT', 400);
   const body = parsed.data;
   if (body.name.trim().length < 2 || body.address.trim().length < 5) throw new StoreError('INVALID_INPUT', 400);
-  const profile = await customer(req);
+  const profile = await customer(req, res);
   let guest = req.signedCookies?.noir_guest;
   if (typeof guest !== 'string') {
     guest = randomUUID();
@@ -62,14 +68,19 @@ router.post('/orders', publicWrites, async (req, res): Promise<void> => {
   res.status(201).json(PlaceOrderResponse.parse(data));
 });
 router.get('/orders', requireCustomer, async (_req, res): Promise<void> => {
-  const { data, error } = await supabase.from('noir_orders').select('*').eq('customer_id', res.locals.profile!.id).order('created_at', { ascending: false }).limit(500);
+  const { data, error } = await res.locals.userDb!.from('noir_orders').select('*')
+    .eq('customer_id', res.locals.profile!.id).order('created_at', { ascending: false }).limit(500);
   checkDb(error);
   res.json(GetMyOrdersResponse.parse((data ?? []).map(orderView)));
 });
 router.get('/orders/:id', requireCustomer, async (req, res): Promise<void> => {
   const params = GetMyOrderParams.safeParse(req.params);
   if (!params.success) throw new StoreError('INVALID_INPUT', 400);
-  res.json(GetMyOrderResponse.parse(await oneOrder(params.data.id, res.locals.profile!.id)));
+  const { data, error } = await res.locals.userDb!.from('noir_orders').select('*')
+    .eq('id', params.data.id).eq('customer_id', res.locals.profile!.id).maybeSingle();
+  checkDb(error);
+  if (!data) throw new StoreError('NOT_FOUND', 404);
+  res.json(GetMyOrderResponse.parse(orderView(data)));
 });
 router.post('/contact', publicWrites, async (req, res): Promise<void> => {
   const parsed = SendContactBody.safeParse(req.body);

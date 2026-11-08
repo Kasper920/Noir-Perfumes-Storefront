@@ -1,183 +1,300 @@
-import { useEffect, useRef, type ReactNode } from 'react';
-import { ClerkProvider, SignIn, SignUp, useAuth, useClerk } from '@clerk/react';
-import { publishableKeyFromHost } from '@clerk/react/internal';
-import { arSA, enUS } from '@clerk/localizations';
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import type { SupabaseClient, User } from '@supabase/supabase-js';
 import { useQueryClient } from '@tanstack/react-query';
 import { Link, Redirect, useLocation } from 'wouter';
-import { ArrowLeft, Moon, Sun, UserRound } from 'lucide-react';
+import { ArrowLeft, LogOut, Moon, Sun, UserRound } from 'lucide-react';
 import { useSitePreferences } from './site-preferences';
+import { messages } from './i18n/translations';
+import { getSupabaseClient } from './supabase-client';
 import lineup from './assets/noir-signature-scents.webp';
+import logo from './assets/noir-logo.webp';
 import './portal.css';
 
-// REQUIRED — copy verbatim.
-const clerkPubKey = publishableKeyFromHost(
-  window.location.hostname,
-  import.meta.env.VITE_CLERK_PUBLISHABLE_KEY,
-);
-
-// REQUIRED — copy verbatim. Empty in dev, auto-set in prod.
-const clerkProxyUrl = import.meta.env.VITE_CLERK_PROXY_URL;
-
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, '');
-
-function stripBase(path: string): string {
-  return basePath && path.startsWith(basePath)
-    ? path.slice(basePath.length) || '/'
-    : path;
-}
-
-if (!clerkPubKey) {
-  throw new Error('Missing VITE_CLERK_PUBLISHABLE_KEY in .env file');
-}
-
-const palette = {
-  dark: { primary: '#c9a24d', fg: '#f5f1ea', muted: '#aaa397', bg: '#191714', input: '#100f0d', danger: '#e08a7a', border: 'rgba(201,162,77,.34)', onPrimary: '#17130d' },
-  light: { primary: '#8c681c', fg: '#26221b', muted: '#655e52', bg: '#fffdf8', input: '#f6f1e8', danger: '#a5402f', border: 'rgba(140,104,28,.36)', onPrimary: '#fffdf8' },
+type AuthState = {
+  client: SupabaseClient | null;
+  user: User | null;
+  isLoaded: boolean;
+  serviceError: boolean;
+};
+type AuthContextValue = AuthState & {
+  signOut: () => Promise<void>;
+  retry: () => void;
 };
 
-function buildAppearance(theme: 'dark' | 'light', rtl: boolean) {
-  const c = palette[theme];
-  const font = rtl ? "'Cairo', sans-serif" : "'DM Sans', sans-serif";
-  const display = rtl ? "'Cairo', sans-serif" : "'Cormorant Garamond', Georgia, serif";
-  return {
-    cssLayerName: 'clerk',
-    options: {
-      logoPlacement: 'inside' as const,
-      logoLinkUrl: basePath || '/',
-      logoImageUrl: `${window.location.origin}${basePath}/logo.svg`,
-    },
-    variables: {
-      colorPrimary: c.primary,
-      colorForeground: c.fg,
-      colorMutedForeground: c.muted,
-      colorDanger: c.danger,
-      colorBackground: c.bg,
-      colorInput: c.input,
-      colorInputForeground: c.fg,
-      colorNeutral: c.fg,
-      fontFamily: font,
-      borderRadius: '4px',
-    },
-    elements: {
-      rootBox: { width: '100%', display: 'flex', justifyContent: 'center' },
-      cardBox: { background: c.bg, width: '100%', maxWidth: '440px', minWidth: 0, borderRadius: '4px', border: `1px solid ${c.border}`, boxShadow: '0 30px 80px rgba(0,0,0,.28)', overflow: 'hidden' },
-      card: { background: 'transparent', boxShadow: 'none', border: 0, borderRadius: 0 },
-      footer: { background: 'transparent', boxShadow: 'none', border: 0, borderRadius: 0 },
-      headerTitle: { color: c.fg, fontFamily: display, fontSize: rtl ? '24px' : '32px', fontWeight: rtl ? 700 : 500, letterSpacing: rtl ? 0 : '-.01em' },
-      headerSubtitle: { color: c.muted },
-      socialButtonsBlockButtonText: { color: c.fg },
-      formFieldLabel: { color: c.fg, fontSize: '12px', letterSpacing: rtl ? 0 : '.04em' },
-      footerActionLink: { color: c.primary, fontWeight: 600 },
-      footerActionText: { color: c.muted },
-      dividerText: { color: c.muted },
-      identityPreviewEditButton: { color: c.primary },
-      formFieldSuccessText: { color: c.fg },
-      alertText: { color: c.fg },
-      logoBox: { justifyContent: 'center', height: '56px' },
-      logoImage: { height: '56px', width: '56px' },
-      socialButtonsBlockButton: { border: `1px solid ${c.border}`, background: 'transparent' },
-      formButtonPrimary: { background: c.primary, color: c.onPrimary, textTransform: rtl ? 'none' : 'uppercase', letterSpacing: rtl ? 0 : '.14em', fontSize: '12px', fontWeight: 600, minHeight: '46px', boxShadow: 'none' },
-      formFieldInput: { border: `1px solid ${c.border}`, minHeight: '44px', boxShadow: 'none' },
-      footerAction: { justifyContent: 'center' },
-      dividerLine: { background: c.border },
-      alert: { border: `1px solid ${c.border}`, background: c.input },
-      otpCodeFieldInput: { border: `1px solid ${c.border}`, color: c.fg },
-      formFieldRow: { marginBottom: '2px' },
-      main: { gap: '18px' },
-    },
-  };
-}
-
-function ClerkQueryClientCacheInvalidator() {
-  const { addListener } = useClerk();
-  const queryClient = useQueryClient();
-  const prevUserIdRef = useRef<string | null | undefined>(undefined);
-  useEffect(() => {
-    const unsubscribe = addListener(({ user }) => {
-      const userId = user?.id ?? null;
-      if (prevUserIdRef.current !== undefined && prevUserIdRef.current !== userId) {
-        queryClient.clear();
-      }
-      prevUserIdRef.current = userId;
-    });
-    return unsubscribe;
-  }, [addListener, queryClient]);
-  return null;
-}
+const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [, setLocation] = useLocation();
-  const { language, theme } = useSitePreferences();
-  const rtl = language === 'ar';
-  const base = rtl ? arSA : enUS;
-  const localization = {
-    ...base,
-    signIn: { ...base.signIn, start: { ...base.signIn?.start, title: rtl ? 'أهلًا بعودتك إلى نوار' : 'Return to NOIR', subtitle: rtl ? 'سجّل الدخول لمتابعة طلباتك' : 'Sign in to your private salon' } },
-    signUp: { ...base.signUp, start: { ...base.signUp?.start, title: rtl ? 'انضم إلى دار نوار' : 'Join the house', subtitle: rtl ? 'أنشئ حسابك لحفظ تفاصيل التوصيل' : 'Keep your delivery details and orders in one place' } },
-  };
-  return (
-    <ClerkProvider
-      publishableKey={clerkPubKey}
-      proxyUrl={clerkProxyUrl}
-      appearance={buildAppearance(theme, rtl)}
-      localization={localization}
-      signInUrl={`${basePath}/sign-in`}
-      signUpUrl={`${basePath}/sign-up`}
-      routerPush={(to) => setLocation(stripBase(to))}
-      routerReplace={(to) => setLocation(stripBase(to), { replace: true })}
-    >
-      <ClerkQueryClientCacheInvalidator />
-      {children}
-    </ClerkProvider>
-  );
+  const queryClient = useQueryClient();
+  const [attempt, setAttempt] = useState(0);
+  const [state, setState] = useState<AuthState>({
+    client: null, user: null, isLoaded: false, serviceError: false,
+  });
+  const lastUserId = useRef<string | null | undefined>(undefined);
+
+  useEffect(() => {
+    let active = true;
+    let unsubscribe: (() => void) | undefined;
+    const publish = (client: SupabaseClient, user: User | null) => {
+      const nextId = user?.id ?? null;
+      if (lastUserId.current !== undefined && lastUserId.current !== nextId) queryClient.clear();
+      lastUserId.current = nextId;
+      setState({ client, user, isLoaded: true, serviceError: false });
+    };
+
+    void (async () => {
+      const client = await getSupabaseClient();
+      if (!active) return;
+      const subscription = client.auth.onAuthStateChange((_event, session) => {
+        if (active) publish(client, session?.user ?? null);
+      });
+      unsubscribe = () => subscription.data.subscription.unsubscribe();
+
+      const { data, error } = await client.auth.getSession();
+      if (error) throw error;
+      let user: User | null = null;
+      if (data.session) {
+        const checked = await client.auth.getUser(data.session.access_token);
+        if (!checked.error) user = checked.data.user;
+        else await client.auth.signOut({ scope: 'local' });
+      }
+      if (active) publish(client, user);
+    })().catch(() => {
+      if (active) setState({ client: null, user: null, isLoaded: true, serviceError: true });
+    });
+
+    return () => {
+      active = false;
+      unsubscribe?.();
+    };
+  }, [attempt, queryClient]);
+
+  const value = useMemo<AuthContextValue>(() => ({
+    ...state,
+    signOut: async () => {
+      if (state.client) {
+        const { error } = await state.client.auth.signOut({ scope: 'local' });
+        if (error) throw error;
+      }
+    },
+    retry: () => {
+      setState({ client: null, user: null, isLoaded: false, serviceError: false });
+      setAttempt((n) => n + 1);
+    },
+  }), [state]);
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
-export function AuthPage({ mode }: { mode: 'sign-in' | 'sign-up' }) {
+export function useAuth() {
+  const value = useContext(AuthContext);
+  if (!value) throw new Error('AuthProvider is missing');
+  return value;
+}
+
+type AuthPageMode = 'sign-in' | 'sign-up' | 'reset-password';
+type FormMode = AuthPageMode | 'forgot-password';
+export function AuthPage({ mode }: { mode: AuthPageMode }) {
   const { language, theme, setLanguage, setTheme } = useSitePreferences();
-  const { isLoaded, isSignedIn } = useAuth();
+  const { client, user, isLoaded, serviceError, retry } = useAuth();
+  const [, setLocation] = useLocation();
   const rtl = language === 'ar';
-  if (isLoaded && isSignedIn) return <Redirect to="/account" />;
+  const t = messages[language].auth;
+  const [formMode, setFormMode] = useState<FormMode>(mode);
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
+  const [busy, setBusy] = useState(false);
+  const signInView = formMode === 'sign-in';
+  const signUpView = formMode === 'sign-up';
+  const resetView = formMode === 'reset-password';
+  const forgotView = formMode === 'forgot-password';
+
+  useEffect(() => setFormMode(mode), [mode]);
+  useEffect(() => {
+    if (isLoaded && user && formMode !== 'reset-password') setLocation('/account', { replace: true });
+  }, [formMode, isLoaded, setLocation, user]);
+
+  const redirectTo = (path: string) =>
+    new URL(`${basePath}${path}`, window.location.origin).toString();
+
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!client || busy) return;
+    setBusy(true);
+    setError('');
+    setMessage('');
+    const emailValue = email.trim().toLowerCase();
+    try {
+      if (signInView) {
+        const { error: authError } = await client.auth.signInWithPassword({ email: emailValue, password });
+        if (authError) setError(t.signInError);
+        else setLocation('/account');
+      } else if (signUpView) {
+        if (name.trim().length < 2) { setError(t.nameError); return; }
+        if (password.length < 8) { setError(t.minPasswordError); return; }
+        const { data, error: authError } = await client.auth.signUp({
+          email: emailValue,
+          password,
+          options: {
+            data: { full_name: name.trim() },
+            emailRedirectTo: redirectTo('/account'),
+          },
+        });
+        if (authError) setError(t.signUpError);
+        else if (data.session) setLocation('/account');
+        else setMessage(t.verifyEmail);
+      } else if (forgotView) {
+        const { error: authError } = await client.auth.resetPasswordForEmail(emailValue, {
+          redirectTo: redirectTo('/reset-password'),
+        });
+        if (authError) setError(t.resetError);
+        else setMessage(t.resetSent);
+      } else {
+        if (password.length < 8) { setError(t.minPasswordError); return; }
+        const { error: authError } = await client.auth.updateUser({ password });
+        if (authError) setError(t.resetError);
+        else {
+          await client.auth.signOut({ scope: 'local' });
+          setFormMode('sign-in');
+          setPassword('');
+          setMessage(t.passwordChanged);
+          setLocation('/sign-in');
+        }
+      }
+    } catch {
+      setError(t.serviceError);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const startForgotPassword = () => {
+    setFormMode('forgot-password');
+    setError('');
+    setMessage('');
+  };
+
+  const title = signInView ? t.signInTitle : signUpView ? t.signUpTitle : resetView ? t.resetTitle : t.forgotPassword;
+  const subtitle = signInView ? t.signInSubtitle : signUpView ? t.signUpSubtitle : '';
+  const submitLabel = signInView ? t.submitSignIn : signUpView ? t.submitSignUp : resetView ? t.submitReset : t.sendReset;
+
+  if (mode === 'reset-password' && isLoaded && !user && !serviceError) {
+    return <Redirect to="/sign-in" />;
+  }
+
   return (
     <div className="auth-page" dir={rtl ? 'rtl' : 'ltr'} lang={language}>
       <aside className="auth-art" aria-hidden="true">
         <div className="auth-art-img" style={{ backgroundImage: `url("${lineup}")` }} />
         <div className="auth-art-shade" />
         <div className="auth-art-copy">
-          <p>{rtl ? 'الصالون الخاص' : 'The private salon'}</p>
-          <h2>{rtl ? 'كل زجاجة تُرسل باسمك.' : <>Every bottle leaves<br /><em>with your name on it.</em></>}</h2>
+          <p>{t.salon}</p>
+          <h2>{t.artLine}<br /><em>{t.artEmphasis}</em></h2>
         </div>
       </aside>
       <section className="auth-panel">
         <div className="auth-top">
-          <Link href="/shop" className="portal-back" data-testid="link-auth-back"><ArrowLeft size={16} strokeWidth={1.5} className="flip-rtl" /><span>{rtl ? 'العودة إلى المتجر' : 'Back to the boutique'}</span></Link>
+          <Link href="/shop" className="portal-back" data-testid="link-auth-back">
+            <ArrowLeft size={16} strokeWidth={1.5} className="flip-rtl" /><span>{t.backToBoutique}</span>
+          </Link>
           <div className="portal-bar-actions">
-            <button type="button" className="portal-icon portal-lang" onClick={() => setLanguage((l) => (l === 'en' ? 'ar' : 'en'))} aria-label={rtl ? 'Switch to English' : 'التبديل إلى العربية'} data-testid="button-auth-language">{rtl ? 'EN' : 'عربي'}</button>
-            <button type="button" className="portal-icon" onClick={() => setTheme((v) => (v === 'dark' ? 'light' : 'dark'))} aria-label={theme === 'dark' ? (rtl ? 'الوضع الفاتح' : 'Switch to light theme') : (rtl ? 'الوضع الداكن' : 'Switch to dark theme')} data-testid="button-auth-theme">
+            <button type="button" className="portal-icon portal-lang" onClick={() => setLanguage((l) => (l === 'en' ? 'ar' : 'en'))} aria-label={language === 'en' ? t.switchToArabic : t.switchToEnglish} data-testid="button-auth-language">{rtl ? 'EN' : 'عربي'}</button>
+            <button type="button" className="portal-icon" onClick={() => setTheme((v) => (v === 'dark' ? 'light' : 'dark'))} aria-label={theme === 'dark' ? t.switchToLight : t.switchToDark} data-testid="button-auth-theme">
               {theme === 'dark' ? <Sun size={16} strokeWidth={1.5} /> : <Moon size={16} strokeWidth={1.5} />}
             </button>
           </div>
         </div>
         <div className="auth-card-wrap">
-          {mode === 'sign-in'
-            ? <SignIn routing="path" path={`${basePath}/sign-in`} signUpUrl={`${basePath}/sign-up`} />
-            : <SignUp routing="path" path={`${basePath}/sign-up`} signInUrl={`${basePath}/sign-in`} />}
+          <section className="auth-card" aria-labelledby="auth-title">
+            <img className="auth-brand" src={logo} alt="NOIR PERFUMES" />
+            <p className="auth-kicker">NOIR / 01</p>
+            <h1 id="auth-title">{title}</h1>
+            {subtitle && <p className="auth-subtitle">{subtitle}</p>}
+            {serviceError ? (
+              <div className="auth-feedback is-error" role="alert">
+                <p>{t.serviceError}</p>
+                <button type="button" className="text-action" onClick={retry}>{t.retry}</button>
+              </div>
+            ) : !isLoaded ? (
+              <p className="auth-subtitle" role="status">{t.connecting}</p>
+            ) : (
+              <>
+                <form className="auth-form" onSubmit={submit} aria-busy={busy}>
+                  {signUpView && (
+                    <label htmlFor="auth-name">{t.name}
+                      <input id="auth-name" value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" required minLength={2} maxLength={100} disabled={busy} />
+                    </label>
+                  )}
+                  <label htmlFor="auth-email">{t.email}
+                    <input id="auth-email" value={email} onChange={(e) => setEmail(e.target.value)} type="email" autoComplete="email" required maxLength={254} disabled={busy} />
+                  </label>
+                  {!forgotView && (
+                    <label htmlFor="auth-password">{resetView ? t.newPassword : t.password}
+                      <input id="auth-password" value={password} onChange={(e) => setPassword(e.target.value)} type="password"
+                        autoComplete={signUpView ? 'new-password' : resetView ? 'new-password' : 'current-password'}
+                        required minLength={8} maxLength={128} disabled={busy} />
+                      {signUpView && <span className="auth-field-hint">{t.passwordHint}</span>}
+                    </label>
+                  )}
+                  {error && <p className="auth-feedback is-error" role="alert">{error}</p>}
+                  {message && <p className="auth-feedback is-success" role="status">{message}</p>}
+                  <button type="submit" className="gold-btn auth-submit" disabled={busy}>
+                    {busy ? t.working : submitLabel}
+                  </button>
+                </form>
+                {signInView && <button type="button" className="auth-text-link" onClick={startForgotPassword}>{t.forgotPassword}</button>}
+                {signInView && <p className="auth-switch">{t.newHere} <Link href="/sign-up">{t.signUp}</Link></p>}
+                {signUpView && <p className="auth-switch">{t.hasAccount} <Link href="/sign-in">{t.signIn}</Link></p>}
+                {forgotView && <button type="button" className="auth-text-link" onClick={() => { setFormMode('sign-in'); setError(''); setMessage(''); }}>{t.backToSignIn}</button>}
+                {resetView && <p className="auth-switch">{t.backToSignIn} <Link href="/sign-in">{t.signIn}</Link></p>}
+              </>
+            )}
+          </section>
         </div>
-        <p className="auth-foot">{rtl ? 'لا تتم أي عملية دفع عبر الإنترنت. تُسدَّد الطلبات يدويًا.' : 'No payment is taken online. Orders are settled manually with the house.'}</p>
+        <p className="auth-foot">{t.paymentNote}</p>
       </section>
     </div>
   );
 }
 
-export function AccountEntry() {
-  const { isLoaded, isSignedIn } = useAuth();
+export function AccountEntry({ placement = 'header' }: { placement?: 'header' | 'drawer' }) {
   const { language } = useSitePreferences();
+  const { user, isLoaded, signOut } = useAuth();
+  const [, setLocation] = useLocation();
   const rtl = language === 'ar';
-  const signedIn = isLoaded && isSignedIn;
-  const label = signedIn ? (rtl ? 'حسابي' : 'My account') : (rtl ? 'تسجيل الدخول' : 'Sign in');
+  const t = messages[language].auth;
+  const name = typeof user?.user_metadata?.full_name === 'string' ? user.user_metadata.full_name.trim() : '';
+  const identity = name || user?.email || t.account;
+  const label = isLoaded && user ? `${t.account}: ${identity}` : t.signIn;
+  const leave = async () => {
+    try {
+      await signOut();
+      setLocation('/shop');
+    } catch {
+      setLocation('/shop');
+    }
+  };
+
+  if (!isLoaded || !user) {
+    return <div className={`account-entry-group ${placement === 'header' ? 'header-account' : 'is-drawer'}`}>
+      <Link href="/sign-in" className="account-entry-link" aria-label={label} title={label} data-testid="link-account-entry">
+        <UserRound size={18} strokeWidth={1.5} /><span>{t.signIn}</span>
+      </Link>
+    </div>;
+  }
+
   return (
-    <Link href={signedIn ? '/account' : '/sign-in'} className="icon-button action-button account-entry" aria-label={label} title={label} data-testid="link-account-entry">
-      <UserRound size={18} strokeWidth={1.5} />
-      {signedIn && <span className="account-dot" aria-hidden="true" />}
-    </Link>
+    <div className={`account-entry-group ${placement === 'header' ? 'header-account' : 'is-drawer'}`}>
+      <Link href="/account" className="account-entry-link" aria-label={label} title={identity} data-testid="link-account-entry">
+        <UserRound size={18} strokeWidth={1.5} /><span className="account-entry-name">{identity}</span>
+      </Link>
+      <button type="button" className="account-signout" onClick={() => void leave()} aria-label={t.signOut} title={t.signOut} data-testid="button-nav-sign-out">
+        <LogOut size={16} strokeWidth={1.5} /><span>{t.signOut}</span>
+      </button>
+      {placement === 'drawer' && <span className="account-entry-email" dir="ltr">{user.email}</span>}
+    </div>
   );
 }

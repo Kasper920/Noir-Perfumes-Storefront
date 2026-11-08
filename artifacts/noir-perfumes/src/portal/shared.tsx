@@ -1,15 +1,14 @@
 import type { CSSProperties, ReactNode } from 'react';
 import { Link, useLocation } from 'wouter';
-import { useAuth, useClerk } from '@clerk/react';
 import { ArrowLeft, LogOut, Moon, RotateCcw, Sun } from 'lucide-react';
 import { getGetProfileQueryKey, useGetProfile } from '@workspace/api-client-react';
 import { useSitePreferences } from '../site-preferences';
 import { products } from '../data/products';
 import { productCrop } from '../catalog-context';
 import { portalCopy } from './copy';
+import { useAuth } from '../auth-shell';
 import '../portal.css';
 
-export const basePath = import.meta.env.BASE_URL.replace(/\/$/, '');
 export const LIVE = { staleTime: 30_000, refetchInterval: 30_000, refetchOnWindowFocus: true } as const;
 
 export function usePortal() {
@@ -30,8 +29,8 @@ export function usePortal() {
 }
 
 export function useAuthReady() {
-  const { isLoaded, isSignedIn } = useAuth();
-  return { isLoaded, ready: isLoaded && Boolean(isSignedIn) };
+  const { isLoaded, user } = useAuth();
+  return { isLoaded, ready: isLoaded && Boolean(user) };
 }
 
 export function errorStatus(error: unknown): number | undefined {
@@ -44,7 +43,7 @@ export function errorStatus(error: unknown): number | undefined {
 
 export function PortalShell({ children, section }: { children: ReactNode; section: 'account' | 'admin' }) {
   const { t, theme, setTheme, setLanguage, rtl, language } = usePortal();
-  const { signOut } = useClerk();
+  const { signOut } = useAuth();
   const [, setLocation] = useLocation();
   return (
     <div className="portal" dir={rtl ? 'rtl' : 'ltr'} lang={language}>
@@ -61,7 +60,7 @@ export function PortalShell({ children, section }: { children: ReactNode; sectio
           <button type="button" className="portal-icon" onClick={() => setTheme((v) => (v === 'dark' ? 'light' : 'dark'))} aria-label={theme === 'dark' ? t.toLight : t.toDark} aria-pressed={theme === 'light'} data-testid="button-theme">
             {theme === 'dark' ? <Sun size={16} strokeWidth={1.5} /> : <Moon size={16} strokeWidth={1.5} />}
           </button>
-          <button type="button" className="portal-icon portal-signout" onClick={() => { void signOut({ redirectUrl: basePath || '/' }); }} data-testid="button-sign-out">
+          <button type="button" className="portal-icon portal-signout" onClick={() => { void signOut().catch(() => undefined).finally(() => setLocation('/shop')); }} data-testid="button-sign-out">
             <LogOut size={16} strokeWidth={1.5} className="flip-rtl" /><span>{t.signOut}</span>
           </button>
         </div>
