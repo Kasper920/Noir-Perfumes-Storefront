@@ -1,7 +1,7 @@
 import express, { type Express, type ErrorRequestHandler } from "express";
 import cookieParser from 'cookie-parser';
 import { StoreError } from './lib/supabase';
-import pinoHttp from "pino-http";
+import { pinoHttp } from "pino-http";
 import router from "./routes";
 import { logger } from "./lib/logger";
 
