@@ -1,0 +1,35 @@
+{
+  "services": {
+    "storefront": {
+      "root": "artifacts/noir-perfumes/",
+      "framework": "vite",
+      "buildCommand": "PORT=3000 BASE_PATH=/ pnpm run build",
+      "outputDirectory": "dist/public",
+      "rewrites": [
+        {
+          "source": "/(.*)",
+          "destination": "/index.html"
+        }
+      ]
+    },
+    "api": {
+      "root": "artifacts/api-server/",
+      "framework": "express",
+      "entrypoint": "src/app.ts"
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": {
+        "service": "api"
+      }
+    },
+    {
+      "source": "/(.*)",
+      "destination": {
+        "service": "storefront"
+      }
+    }
+  ]
+}
