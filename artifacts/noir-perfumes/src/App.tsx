@@ -21,6 +21,7 @@ import { STORE_CONFIG } from './data/config';
 import { CommerceProvider, useCommerce, type PerfumeSize } from './commerce-context';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
+import { MuskTestPaymentLink } from './components/musk-test-payment-link';
 
 const queryClient = new QueryClient();
 const navigation = [
@@ -552,6 +553,7 @@ function Home() {
               </div>
               <button type="button" className="cta-primary quick-add" disabled={catalogError || quickView.stock[quickSize] < quickQuantity} onClick={() => { addProduct(quickView.id, quickSize, quickQuantity); setQuickViewId(null); }}>{quickView.stock[quickSize] >= quickQuantity ? copy.add : backend.unavailable} <span>{formatPrice(quickView.prices[quickSize] * quickQuantity)}</span></button>
             </div>
+            {!catalogError && <MuskTestPaymentLink productId={quickView.id} size={quickSize} quantity={quickQuantity} price={quickView.prices[quickSize]} currency={STORE_CONFIG.currency} language={language} />}
           </div>
         </DialogContent>}
       </Dialog>
