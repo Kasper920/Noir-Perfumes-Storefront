@@ -550,6 +550,10 @@ button:disabled { cursor: not-allowed; opacity: .55; transform: none; }
 .quick-view-copy strong { margin: 12px 0 24px; font-size: 17px; font-weight: 500; }
 .quick-view-copy strong small { color: var(--color-muted); font-size: 11px; font-weight: 400; }
 .quick-view-copy .cta-primary { border: 0; cursor: pointer; font-family: var(--font-body); }
+.stripe-test-payment { width: 100%; margin-block-start: 22px; padding-block-start: 18px; border-block-start: 1px solid var(--color-border); }
+.stripe-test-payment .stripe-test-payment-label { color: var(--color-gold); font-size: 12px; font-weight: 600; }
+.stripe-test-payment-button { width: 100%; min-height: 48px; text-decoration: none; }
+.stripe-test-payment > p { color: var(--color-muted); font-size: 12px; line-height: 1.7; }
 .quick-close { position: absolute; z-index: 2; top: 14px; right: 14px; display: grid; width: 38px; height: 38px; place-items: center; border: 1px solid var(--color-soft-divider); border-radius: 50%; background: var(--color-bg); cursor: pointer; }
 [dir='rtl'] .section-heading, [dir='rtl'] .product-controls, [dir='rtl'] .product-title-row, [dir='rtl'] .product-buy-row { direction: rtl; }
 [dir='rtl'] .section-intro { text-align: start; }
